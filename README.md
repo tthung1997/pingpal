@@ -45,7 +45,7 @@ It listens on loopback only. Check it from a terminal:
 | Left-click the character | Open/close the history (everything you missed, plus any open question). Re-opens a question whose bubble timed out. |
 | Click a bubble | Dismiss it |
 | Drag the character | Move it along the strip; it resumes idling after you let go |
-| Right-click | Menu: history, clear everything, switch strip/corner mode, next screen, quit |
+| `Right-click` | Menu: history, clear everything, switch character pack (remembered across runs), next screen, quit |
 | Click a tray chip | Open the history |
 
 ### Options
@@ -54,20 +54,19 @@ Command-line flags (after `--` when launching through Godot) override `user://se
 (`%APPDATA%\PingPal\settings.cfg` on Windows). Flags are never saved.
 
 ```
-godot --path . -- --port=9000 --mode=corner --scale=4 --pack=pip --token=secret
+godot --path . -- --port=9000 --scale=4 --pack=pip --token=secret
 ```
 
 | Flag | Meaning | Default |
 | --- | --- | --- |
 | `--port=N` | MCP port (`0` picks a free one; it is printed at startup) | `7464` |
-| `--mode=strip\|corner\|window` | Full-width strip along the bottom, small corner window, or a normal window (handy for debugging) | `strip` |
 | `--pack=ID` | Character pack id | `corgi` |
 | `--scale=N` | Character magnification (1-8) | `2` |
 | `--token=SECRET` | Require `Authorization: Bearer SECRET` from clients | off |
 | `--no-always-on-top`, `--no-click-through` | Opt out of overlay behaviour | |
 | `--screenshot=PATH` `[--screenshot-delay=S] [--screenshot-history]` | Dev: save the rendered overlay (with alpha) and quit | |
 
-Persisted settings (`[pingpal]` section of `settings.cfg`): `port`, `mode`, `pack_id`, `pixel_scale`,
+Persisted settings (`[pingpal]` section of `settings.cfg`): `port`, `pack_id`, `pixel_scale`,
 `always_on_top`, `click_through`, `fps_cap`, `auth_token`.
 
 ## Connect your AI apps
@@ -183,6 +182,7 @@ A pack is a folder with `pack.json` and a sprite sheet: `packs/<id>/` in the pro
 | Pack | What | Art source |
 | --- | --- | --- |
 | `corgi` (default) | A ginger corgi: sits and idles, with nap / happy / sad breaks; its thinking pose gets your attention | `art/corgi/`, built by `tools/art/prep_sheet.py` + LibreSprite |
+| `corgi_desk` | A coder corgi in a hoodie, headphones and glasses working at a desk: types away while idle, chews a bone or naps in a sleep mask on breaks, and raises a paw for attention | `tools/art/corgi_desk.js`, built by LibreSprite (`python tools/art/build.py corgi_desk`) |
 | `pip` | Placeholder blue blob with nap / play / dance breaks | `tools/make_placeholder_pack.gd` |
 
 The corgi is the reference art itself, not a redraw. It came from ten generated 4-panel strips
@@ -225,7 +225,7 @@ synthetic clicks. `scripts/test-mcp.*` check a *running* app from outside.
 ## Troubleshooting
 
 - **"Can't listen on port 7464"**: another PingPal (or program) has it. Use `--port=`.
-- **Character hidden behind a full-screen game**: exclusive full-screen apps cover overlays. Use windowed/borderless mode, or `--mode=window` to debug.
+- **Character hidden behind a full-screen game**: exclusive full-screen apps cover overlays. Use windowed/borderless mode in the game.
 - **A client says the session is invalid after restarting PingPal**: PingPal accepts unknown session ids, so just retry; reconnecting restores the client name, otherwise pass `source`.
 - **Nothing is clickable / everything is click-through**: run with `--no-click-through` to rule out the passthrough region.
 - Windows only draws pixels inside the click region (a Godot/OS quirk), so everything interactive is included in it by design.

@@ -55,9 +55,10 @@ def find_exe():
 
 def embed_source(rel):
     """Encode a small PNG as JS vars: SRC_W/SRC_H, SRC_PAL (hex colours) and SRC_ROWS (one string
-    per row, '.' = transparent, else a letter indexing SRC_PAL). LibreSprite scripts can only
+    per row, '.' = transparent, else a character indexing SRC_PAL). LibreSprite scripts can only
     read the document they opened, so the source art travels inside the bundle instead."""
     from PIL import Image
+    alphabet = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
     im = Image.open(os.path.join(ROOT, *rel.split("/"))).convert("RGBA")
     pal, rows = [], []
     for y in range(im.height):
@@ -70,10 +71,10 @@ def embed_source(rel):
             c = "#%02x%02x%02x" % (r, g, b)
             if c not in pal:
                 pal.append(c)
-            row += chr(ord("a") + pal.index(c))
+            row += alphabet[pal.index(c)]
         rows.append(row)
-    if len(pal) > 26:
-        raise SystemExit(f"{rel}: {len(pal)} colours, at most 26 supported")
+    if len(pal) > len(alphabet):
+        raise SystemExit(f"{rel}: {len(pal)} colours, at most {len(alphabet)} supported")
     return (f"var SRC_W = {im.width}, SRC_H = {im.height};\n"
             f"var SRC_PAL = {pal!r};\n"
             f"var SRC_ROWS = {rows!r};")
@@ -136,4 +137,10 @@ if __name__ == "__main__":
         out = bundle(n, "--proof" in flags)
         print("wrote", os.path.relpath(out, ROOT))
         if "--no-run" not in flags:
-            subprocess.run([find_exe(), "-b", "--script", out], check=True)
+            res = subprocess.run([find_exe(), "-b", "--script", out], capture_output=True, text=True, check=True)
+            if res.stdout:
+                print(res.stdout, end="")
+            if res.stderr:
+                print(res.stderr, file=sys.stderr, end="")
+            if re.search(r"\b(Error|TypeError|ReferenceError|SyntaxError):", (res.stdout or "") + (res.stderr or "")):
+                raise SystemExit(f"LibreSprite script error while running {out}")

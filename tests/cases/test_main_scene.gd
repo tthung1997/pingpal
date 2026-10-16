@@ -95,3 +95,18 @@ func test_right_click_opens_the_menu() -> void:
 	_click(main, MOUSE_BUTTON_RIGHT)
 	check(main._menu.visible, "context menu opens")
 	main.queue_free()
+
+
+func test_switching_pack_from_menu_updates_character_and_persists_setting() -> void:
+	var previous_pack: String = PingConfig.pack_id
+	var main: Node = await _boot()
+	_click(main, MOUSE_BUTTON_RIGHT)
+	main._on_menu_item(&"pack:corgi_desk")
+	eq(main._pack.id, "corgi_desk", "character switches in-game to corgi_desk")
+	eq(PingConfig.pack_id, "corgi_desk", "PingConfig updates pack_id")
+	var reloaded: AppSettings = AppSettings.new()
+	reloaded.load_settings(PackedStringArray())
+	eq(reloaded.pack_id, "corgi_desk", "next run remembers the selected pack from settings.cfg")
+	reloaded.free()
+	PingConfig.store("pack_id", previous_pack)
+	main.queue_free()

@@ -1,8 +1,8 @@
 class_name OverlayWindow
 extends Node
 ## Turns the app window into a desktop overlay: a borderless, transparent, always-on-top strip
-## along the bottom of a screen (or a smaller window in its corner), where clicks fall through
-## to whatever is underneath except on the character and its UI.
+## along the bottom of a screen, where clicks fall through to whatever is underneath except on
+## the character and its UI.
 ##
 ## Approach borrowed from Tiny Ages' DesktopWindow: Godot's mouse passthrough accepts a single
 ## polygon, so the clickable area is the "skyline" of everything interactive: for each column,
@@ -13,7 +13,6 @@ extends Node
 
 signal layout_changed(logical_size: Vector2)
 
-var mode: AppSettings.Mode = AppSettings.Mode.STRIP
 var ui_scale: float = 1.0
 
 var _logical_size: Vector2 = Vector2(640, 320)
@@ -32,20 +31,18 @@ func is_headless() -> bool:
 func apply() -> void:
 	_apply_serial += 1
 	var serial: int = _apply_serial
-	mode = PingConfig.mode
 	if is_headless():
 		layout_changed.emit(_logical_size)
 		return
 	var window: Window = get_window()
-	var floating: bool = mode != AppSettings.Mode.WINDOW
 	window.mode = Window.MODE_WINDOWED
-	window.borderless = floating
-	window.transparent = floating
-	window.unresizable = floating
+	window.borderless = true
+	window.transparent = true
+	window.unresizable = true
 	window.always_on_top = PingConfig.always_on_top
-	# A floating overlay should never steal keyboard focus from the app you are working in.
-	window.unfocusable = floating
-	get_viewport().transparent_bg = floating
+	# The overlay should never steal keyboard focus from the app you are working in.
+	window.unfocusable = true
+	get_viewport().transparent_bg = true
 	Engine.max_fps = PingConfig.fps_cap
 	OS.low_processor_usage_mode = true
 	ui_scale = maxf(1.0, snappedf(DisplayServer.screen_get_scale(window.current_screen), 0.25))
@@ -70,7 +67,7 @@ func move_to_next_screen() -> void:
 ## Sets the areas (logical px, window-relative) that receive clicks; everything else passes
 ## through. Call every frame: it only touches the OS when the shape changes.
 func set_clickable(rects: Array[Rect2]) -> void:
-	if is_headless() or mode == AppSettings.Mode.WINDOW or not PingConfig.click_through:
+	if is_headless() or not PingConfig.click_through:
 		return
 	var signature: int = hash(ui_scale)
 	for rect: Rect2 in rects:
@@ -128,16 +125,8 @@ func _place() -> void:
 	var window: Window = get_window()
 	var usable: Rect2i = DisplayServer.screen_get_usable_rect(window.current_screen)
 	var height: int = roundi(PingConfig.strip_height * ui_scale)
-	var corner_width: int = roundi(PingConfig.corner_width * ui_scale)
 	var size: Vector2i = Vector2i(usable.size.x, height)
 	var position: Vector2i = Vector2i(usable.position.x, usable.end.y - height)
-	match mode:
-		AppSettings.Mode.CORNER:
-			size = Vector2i(mini(corner_width, usable.size.x), height)
-			position = usable.end - size
-		AppSettings.Mode.WINDOW:
-			size = Vector2i(mini(corner_width + 160, usable.size.x), height + 80)
-			position = usable.position + (usable.size - size) / 2
 	_logical_size = Vector2(size) / ui_scale
 	window.size = size
 	window.position = position

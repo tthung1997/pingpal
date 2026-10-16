@@ -176,7 +176,7 @@ func test_clear_one_source_and_all() -> void:
 
 
 func test_every_message_gets_the_single_attention_animation() -> void:
-	for pack_id: String in ["corgi", "pip"]:
+	for pack_id: String in ["corgi", "corgi_desk", "pip"]:
 		var pack: CharacterPack = CharacterPack.load_by_id(pack_id)
 		check(pack.resolve(CharacterBrain.ATTENTION_STATE) != pack.resolve(&"idle"), "%s has a distinct attention animation" % pack_id)
 

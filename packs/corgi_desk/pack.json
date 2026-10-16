@@ -1,0 +1,28 @@
+{
+  "schema": 2,
+  "id": "corgi_desk",
+  "name": "Corgi at Desk",
+  "author": "PingPal",
+  "description": "A coder corgi in a hoodie, headphones and glasses working at a desk. Seriously types away while idle, chews a bone or naps in a sleep mask on breaks without leaving the chair, and raises a paw to get your attention. Built in LibreSprite (tools/art/corgi_desk.js).",
+  "sheet": "sheet.png",
+  "frame_size": [89, 131],
+  "anchor": [44, 129],
+  "head": [41, 44],
+  "behavior": {
+    "idle_seconds": [6.0, 14.0],
+    "break_seconds": [3.0, 6.0],
+    "breaks": ["bone", "sleep"]
+  },
+  "animations": {
+    "idle":      { "row": 0, "frames": 4, "fps": 6, "loop": true },
+    "bone":      { "row": 1, "frames": 4, "fps": 4, "loop": true },
+    "sleep":     { "row": 2, "frames": 4, "fps": 2, "loop": true },
+    "attention": { "row": 3, "frames": 4, "fps": 5, "loop": true }
+  },
+  "states": {
+    "idle": "idle",
+    "attention": "attention",
+    "bone": "bone",
+    "sleep": "sleep"
+  }
+}
