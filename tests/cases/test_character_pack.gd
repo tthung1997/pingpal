@@ -10,16 +10,21 @@ func _manifest() -> Dictionary:
 	return parsed as Dictionary
 
 
+func _configure(manifest: Dictionary) -> CharacterPack:
+	var pack: CharacterPack = CharacterPack.new()
+	pack.configure(manifest, _sheet())
+	return pack
+
+
 func test_bundled_pack_loads() -> void:
 	var pack: CharacterPack = CharacterPack.load_by_id("pip")
 	check(pack != null, "bundled pack 'pip' should load")
 	if pack == null:
 		return
 	check(pack.is_valid(), "pip should be valid: %s" % ", ".join(pack.errors))
-	eq(pack.kind, CharacterPack.Kind.PET, "pip is a pet-kind pack")
-	check(pack.wanders(), "a pet wanders")
-	eq(pack.frames.get_frame_count(&"walk"), 4, "walk has 4 frames")
-	eq(pack.resolve(&"happy"), &"happy", "mapped state resolves to its animation")
+	eq(pack.frames.get_frame_count(&"idle"), 4, "idle has 4 frames")
+	eq(pack.resolve(&"attention"), &"alert", "mapped state resolves to its animation")
+	eq(pack.breaks(), [&"sleep", &"play", &"dance"] as Array[StringName], "breaks come from the manifest")
 
 
 func test_every_bundled_pack_is_valid() -> void:
@@ -29,39 +34,21 @@ func test_every_bundled_pack_is_valid() -> void:
 		var pack: CharacterPack = CharacterPack.load_dir(found[pack_id])
 		check(pack.is_valid(), "%s should be valid: %s" % [pack_id, ", ".join(pack.errors)])
 		eq(pack.id, pack_id, "%s: manifest id matches its folder" % pack_id)
-		for state: StringName in CharacterPack.REQUIRED_STATES + [&"excited", &"error", &"sleepy", &"neutral"]:
+		for state: StringName in CharacterPack.REQUIRED_STATES:
 			check(pack.resolve(state) != &"", "%s resolves '%s'" % [pack_id, state])
+		check(not pack.breaks().is_empty(), "%s has at least one break animation" % pack_id)
 
 
-func test_corgi_is_a_wandering_pet_with_the_shared_animations() -> void:
+func test_corgi_animations() -> void:
 	var pack: CharacterPack = CharacterPack.load_by_id("corgi")
 	check(pack != null and pack.is_valid(), "corgi loads")
 	if pack == null:
 		return
-	eq(pack.kind, CharacterPack.Kind.PET, "the corgi is a pet")
-	check(pack.wanders(), "so it wanders")
 	eq(pack.frame_size, Vector2i(89, 131), "frame size matches the sheet")
-	for animation: StringName in [&"idle", &"walk", &"sleep", &"thinking", &"happy", &"alert", &"sad"]:
+	eq(pack.resolve(&"attention"), &"thinking", "the corgi gets attention with its thinking pose")
+	eq(pack.breaks(), [&"sleep", &"happy", &"sad"] as Array[StringName], "its breaks are nap, happy and sad")
+	for animation: StringName in [&"idle", &"sleep", &"thinking", &"happy", &"sad"]:
 		eq(pack.frames.get_frame_count(animation), 4, "%s has 4 frames" % animation)
-
-
-## A pack for a character that never walks (a person at a desk, a robot) needs no walk animation.
-func test_a_pack_that_does_not_wander_needs_no_walk() -> void:
-	var manifest: Dictionary = _manifest()
-	manifest["kind"] = "avatar"
-	manifest.erase("behavior")
-	(manifest["animations"] as Dictionary).erase("walk")
-	(manifest["states"] as Dictionary).erase("walk")
-	var pack: CharacterPack = CharacterPack.new()
-	pack.configure(manifest, _sheet())
-	check(pack.is_valid(), "avatar without walk is valid: %s" % ", ".join(pack.errors))
-	eq(pack.resolve(&"walk"), &"idle", "walk falls back to idle")
-
-	manifest["kind"] = "pet"
-	pack = CharacterPack.new()
-	pack.configure(manifest, _sheet())
-	check(not pack.is_valid(), "but a pet that wanders without a walk animation is rejected")
-	check(", ".join(pack.errors).contains("walk"), "and the error says why")
 
 
 func test_frames_report_their_visible_pixels() -> void:
@@ -75,47 +62,41 @@ func test_frames_report_their_visible_pixels() -> void:
 	eq(pack.used_rect(&"idle", 99), Rect2i(Vector2i.ZERO, pack.frame_size), "unknown frames fall back to the whole frame")
 
 
-func test_missing_states_fall_back() -> void:
+func test_unknown_states_fall_back_to_idle() -> void:
 	var pack: CharacterPack = CharacterPack.load_by_id("pip")
-	eq(pack.resolve(&"excited"), &"happy", "excited falls back to happy")
-	eq(pack.resolve(&"error"), &"sad", "error falls back to sad")
-	eq(pack.resolve(&"sleepy"), &"sleep", "sleepy falls back to sleep")
 	eq(pack.resolve(&"no-such-state"), &"idle", "unknown states land on idle")
 
 
-func test_avatar_stays_put() -> void:
+func test_a_pack_without_breaks_is_valid() -> void:
 	var manifest: Dictionary = _manifest()
-	manifest["kind"] = "avatar"
-	manifest.erase("behavior")
-	var pack: CharacterPack = CharacterPack.new()
-	pack.configure(manifest, _sheet())
-	check(pack.is_valid(), "avatar manifest should be valid: %s" % ", ".join(pack.errors))
-	check(not pack.wanders(), "avatars do not wander by default")
-	eq(float(pack.behavior["weights"]["wander"]), 0.0, "avatar wander weight is zero")
+	(manifest["behavior"] as Dictionary).erase("breaks")
+	var pack: CharacterPack = _configure(manifest)
+	check(pack.is_valid(), "breaks are optional: %s" % ", ".join(pack.errors))
+	check(pack.breaks().is_empty(), "so there are none")
 
 
-func test_manifest_can_override_behavior() -> void:
+func test_manifest_can_override_timing() -> void:
 	var manifest: Dictionary = _manifest()
-	manifest["kind"] = "avatar"
-	manifest["behavior"] = {"wander": true, "speed": 40}
-	var pack: CharacterPack = CharacterPack.new()
-	pack.configure(manifest, _sheet())
-	check(pack.wanders(), "explicit wander=true overrides the avatar default")
+	manifest["behavior"] = {"idle_seconds": [1.0, 2.0]}
+	var pack: CharacterPack = _configure(manifest)
+	eq(pack.behavior["idle_seconds"], [1.0, 2.0], "idle_seconds is overridden")
+	eq(pack.behavior["break_seconds"], [3.0, 6.0], "the rest keeps its default")
 
 
 func test_invalid_manifests_report_errors() -> void:
 	var manifest: Dictionary = _manifest()
-	manifest["schema"] = 99
-	var pack: CharacterPack = CharacterPack.new()
-	pack.configure(manifest, _sheet())
-	check(not pack.is_valid(), "wrong schema is rejected")
+	manifest["schema"] = 1
+	check(not _configure(manifest).is_valid(), "the old schema is rejected")
 
 	manifest = _manifest()
-	(manifest["states"] as Dictionary).erase("sleep")
-	(manifest["animations"] as Dictionary).erase("sleep")
-	pack = CharacterPack.new()
-	pack.configure(manifest, _sheet())
-	check(not pack.is_valid(), "a pack missing a required state is rejected")
+	(manifest["states"] as Dictionary).erase("attention")
+	check(not _configure(manifest).is_valid(), "a pack without an attention animation is rejected")
+
+	manifest = _manifest()
+	(manifest["behavior"] as Dictionary)["breaks"] = ["no-such-break"]
+	var pack: CharacterPack = _configure(manifest)
+	check(not pack.is_valid(), "a break that maps to nothing is rejected")
+	check(", ".join(pack.errors).contains("no-such-break"), "and the error names it")
 
 	manifest = _manifest()
 	pack = CharacterPack.new()

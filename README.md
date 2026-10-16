@@ -4,12 +4,12 @@ A tiny character that lives in a corner of your screen and tells you what your A
 
 PingPal runs an **MCP server** on your machine. Point Claude Code, GitHub Copilot, Codex, VS Code or any
 other MCP client at it, and the AI decides what the character says and does: *"Tests are green"*,
-*"Need your call on the migration"*, a happy hop when a long task finishes. You stop babysitting
+*"Need your call on the migration"*, the character perking up when a long task finishes. You stop babysitting
 five terminals and just glance at the character.
 
 - Transparent, always-on-top, **click-through** except on the character and its bubbles.
 - Several AIs at once: each gets its own color, accessory and tray chip; urgent things jump the queue, floods are batched ("4 agents finished").
-- When nobody is talking, it does its own thing: wanders and naps.
+- When nobody is talking, it loops an idle animation and now and then takes a short random break (nap, stretch, ...). Any new message gets one neutral attention animation.
 - Characters are swappable **packs** (sprite sheet + JSON). Ships with a pixel-art corgi (default) and a placeholder blob, *Pip*.
 
 Built with Godot 4.7 (GDScript, no addons). See [docs/DESIGN.md](docs/DESIGN.md) for how it works.
@@ -44,7 +44,7 @@ It listens on loopback only. Check it from a terminal:
 | --- | --- |
 | Left-click the character | Open/close the history (everything you missed, plus any open question). Re-opens a question whose bubble timed out. |
 | Click a bubble | Dismiss it |
-| Drag the character | Move it along the strip; it wanders again after you let go |
+| Drag the character | Move it along the strip; it resumes idling after you let go |
 | Right-click | Menu: history, clear everything, switch strip/corner mode, next screen, quit |
 | Click a tray chip | Open the history |
 
@@ -153,7 +153,7 @@ PingPal sends usage instructions during the MCP handshake, but a line in your ag
 
 | Tool | Arguments | What it does |
 | --- | --- | --- |
-| `notify` | `text`, `source?`, `mood?` neutral/happy/excited/alert/thinking/sad/sleepy/error, `priority?` low/normal/high/urgent | Speech bubble + reaction. Low priority is batched; urgent interrupts. |
+| `notify` | `text`, `source?`, `priority?` low/normal/high/urgent | Speech bubble + attention animation. Low priority is batched; urgent interrupts. |
 | `set_state` | `status` working/done/needs_input/error/idle, `source?`, `text?` | Updates the tray chip. `done`, `needs_input` and `error` also announce themselves. |
 | `ask` | `question`, `choices?` (2-4, default Yes/No), `source?`, `timeout_seconds?` (default 45) | Shows buttons and **waits** for a click. Returns `{answered, choice, index}` or `{answered:false, reason}`. |
 | `clear` | `source?`, `all?` | Removes your queued messages, bubble, questions and status (or everyone's with `all`). |
@@ -166,12 +166,12 @@ By hand:
 
 ```powershell
 $h = @{ "Content-Type" = "application/json" }
-Invoke-RestMethod http://127.0.0.1:7464/mcp -Method Post -Headers $h -Body '{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"notify","arguments":{"source":"Me","text":"Hello!","mood":"happy"}}}'
+Invoke-RestMethod http://127.0.0.1:7464/mcp -Method Post -Headers $h -Body '{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"notify","arguments":{"source":"Me","text":"Hello!"}}}'
 ```
 
 ```bash
 curl -s http://127.0.0.1:7464/mcp -H 'Content-Type: application/json' \
-  -d '{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"notify","arguments":{"source":"Me","text":"Hello!","mood":"happy"}}}'
+  -d '{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"notify","arguments":{"source":"Me","text":"Hello!"}}}'
 ```
 
 ## Characters
@@ -182,8 +182,8 @@ A pack is a folder with `pack.json` and a sprite sheet: `packs/<id>/` in the pro
 
 | Pack | What | Art source |
 | --- | --- | --- |
-| `corgi` (default) | A ginger corgi pet: trots around and naps; thinking, happy, alert and sad reactions | `art/corgi/`, built by `tools/art/prep_sheet.py` + LibreSprite |
-| `pip` | Placeholder blue blob that wanders | `tools/make_placeholder_pack.gd` |
+| `corgi` (default) | A ginger corgi: sits and idles, with nap / happy / sad breaks; its thinking pose gets your attention | `art/corgi/`, built by `tools/art/prep_sheet.py` + LibreSprite |
+| `pip` | Placeholder blue blob with nap / play / dance breaks | `tools/make_placeholder_pack.gd` |
 
 The corgi is the reference art itself, not a redraw. It came from ten generated 4-panel strips
 (one per animation, same character on a dark floor). `tools/art/prep_sheet.py` cuts the dog out of
@@ -203,11 +203,12 @@ python tools/art/prep_sheet.py path/to/refs art/corgi/base_sheet.png --layout ar
 
 The reference images themselves are not in the repo. Re-running reproduces identical pixels.
 
-**Making a character.** Every pack uses the same small, species-neutral set of animations, so a pet,
-a person or a robot all work: `idle`, `sleep`, `thinking` (an AI is working), `happy` (success),
-`alert` (needs you) and `sad` (failure), 2-4 frames each, plus `walk` only if it wanders. Generate
-those strips, run `prep_sheet.py`, and copy `packs/corgi/pack.json`. A `"kind": "pet"` pack wanders
-and naps; `"kind": "avatar"` stays put and only emotes (no `walk` needed). The clickable area follows
+**Making a character.** Every pack uses the same small, species-neutral chain, so a pet, a person or
+a robot all work: one looping `idle` animation (required), one neutral `attention` animation
+(required; played for every new message) and any number of short `breaks` (a nap, a stretch, ...)
+played at random while idle. 2-4 frames each. Generate those strips, run `prep_sheet.py`, and copy
+`packs/corgi/pack.json`, which lists the breaks and their timing. The corgi sheet still contains
+`walk` and `alert` rows that no pack uses. The clickable area follows
 the visible pixels of the current frame, so transparent parts of a large frame never block clicks.
 
 ## Tests

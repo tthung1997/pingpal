@@ -22,9 +22,9 @@ func _ask(hub: NotificationManager, out: Dictionary, source: String = "claude", 
 
 func test_higher_priority_goes_first() -> void:
 	var hub: NotificationManager = _hub()
-	hub.notify("a", "low one", &"neutral", Notice.Priority.LOW)
-	hub.notify("b", "normal one", &"neutral", Notice.Priority.NORMAL)
-	hub.notify("c", "high one", &"neutral", Notice.Priority.HIGH)
+	hub.notify("a", "low one", Notice.Priority.LOW)
+	hub.notify("b", "normal one", Notice.Priority.NORMAL)
+	hub.notify("c", "high one", Notice.Priority.HIGH)
 	var shown: Array[Notice] = _drain(hub, 30.0)
 	eq(shown.size(), 3, "all three are eventually shown")
 	eq(shown[0].text, "high one", "high priority first")
@@ -54,7 +54,7 @@ func test_two_notices_are_not_batched() -> void:
 func test_high_priority_is_never_batched() -> void:
 	var hub: NotificationManager = _hub()
 	for index: int in 4:
-		hub.notify("s%d" % index, "urgent-ish %d" % index, &"alert", Notice.Priority.HIGH)
+		hub.notify("s%d" % index, "urgent-ish %d" % index, Notice.Priority.HIGH)
 	eq(_drain(hub, 60.0).size(), 4, "important items are each seen")
 
 
@@ -73,7 +73,7 @@ func test_urgent_interrupts_current_bubble() -> void:
 	hub.advance(0.1)
 	eq(hub.current.text.begins_with("A long"), true, "first notice is showing")
 	hub.advance(2.0)
-	hub.notify("b", "fire!", &"alert", Notice.Priority.URGENT)
+	hub.notify("b", "fire!", Notice.Priority.URGENT)
 	check(hub.current == null, "the old bubble was taken down")
 	hub.advance(0.1)
 	eq(hub.current.text, "fire!", "urgent shows immediately")
@@ -90,26 +90,17 @@ func test_bubble_time_shrinks_with_backlog() -> void:
 	check(NotificationManager.duration_for(notice, 0) > alone, "urgent lingers longer")
 
 
-func test_status_tray_and_ambient() -> void:
+func test_status_tray() -> void:
 	var hub: NotificationManager = _hub()
-	var ambients: Array[StringName] = []
-	hub.ambient_changed.connect(func(value: StringName) -> void: ambients.append(value))
 	hub.set_state("Claude Code", &"working")
 	hub.set_state("Copilot", &"working", "indexing")
 	eq(hub.active_sources().size(), 2, "both show in the tray")
-	eq(hub.ambient(), &"working", "ambient is working")
 	hub.set_state("Copilot", &"needs_input", "pick a branch")
-	eq(hub.ambient(), &"needs_input", "needs_input outranks working")
 	eq(hub.active_sources()[0].display_name, "Copilot", "the source needing you sorts first")
 	hub.set_state("Copilot", &"idle")
 	hub.set_state("Claude Code", &"done")
-	hub.advance(0.1)
-	eq(hub.ambient(), &"done", "recent done is celebrated")
-	hub.advance(NotificationManager.DONE_AMBIENT_SECONDS + 1.0)
-	eq(hub.ambient(), &"", "then calms down")
-	hub.advance(NotificationManager.DONE_FADE_SECONDS)
+	hub.advance(NotificationManager.DONE_FADE_SECONDS + 1.0)
 	eq(hub.active_sources().size(), 0, "done chips fade away")
-	check(ambients.has(&"working") and ambients.has(&"needs_input"), "ambient changes were announced")
 
 
 func test_acknowledge_clears_done_but_not_needs_input() -> void:
@@ -184,19 +175,10 @@ func test_clear_one_source_and_all() -> void:
 	eq(hub.active_sources().size(), 0, "clear() with no source wipes everything")
 
 
-func test_moods_map_to_species_neutral_states() -> void:
-	var notice: Notice = Notice.new()
-	var expected: Dictionary = {
-		&"neutral": &"idle", &"happy": &"happy", &"excited": &"excited", &"alert": &"alert",
-		&"thinking": &"thinking", &"sad": &"sad", &"sleepy": &"sleepy", &"error": &"error",
-	}
-	for mood: StringName in expected:
-		notice.mood = mood
-		eq(notice.mood_state(), expected[mood], "mood '%s' is acted out as '%s'" % [mood, expected[mood]])
+func test_every_message_gets_the_single_attention_animation() -> void:
 	for pack_id: String in ["corgi", "pip"]:
 		var pack: CharacterPack = CharacterPack.load_by_id(pack_id)
-		for state: StringName in expected.values():
-			check(pack.resolve(state) != &"", "%s can act out '%s'" % [pack_id, state])
+		check(pack.resolve(CharacterBrain.ATTENTION_STATE) != pack.resolve(&"idle"), "%s has a distinct attention animation" % pack_id)
 
 
 func test_text_is_sanitized_and_capped() -> void:

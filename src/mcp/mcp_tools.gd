@@ -10,7 +10,6 @@ const SOURCE_SCHEMA: Dictionary = {
 	"maxLength": 80,
 	"description": "Who you are, e.g. 'Claude Code', 'Copilot', 'Codex'. Optional: defaults to your MCP client name. Add a short suffix to tell parallel agents apart, e.g. 'Claude Code · api'. Keep it stable between calls.",
 }
-const MOODS: Array = ["neutral", "happy", "excited", "alert", "thinking", "sad", "sleepy", "error"]
 const PRIORITIES: Array = ["low", "normal", "high", "urgent"]
 const STATUSES: Array = ["working", "done", "needs_input", "error", "idle"]
 
@@ -26,13 +25,12 @@ func definitions() -> Array:
 		{
 			"name": "notify",
 			"title": "Show a short message",
-			"description": "Make the character say something in a speech bubble and react with a mood. Use for brief, glanceable updates (a sentence, under ~100 characters). Don't narrate every step.",
+			"description": "Make the character say something in a speech bubble and get the user's attention. Use for brief, glanceable updates (a sentence, under ~100 characters). Don't narrate every step.",
 			"inputSchema": {
 				"type": "object",
 				"properties": {
 					"source": SOURCE_SCHEMA,
 					"text": {"type": "string", "minLength": 1, "maxLength": 280, "description": "What to say. Short and friendly."},
-					"mood": {"type": "string", "enum": MOODS, "default": "neutral", "description": "How the character reacts."},
 					"priority": {"type": "string", "enum": PRIORITIES, "default": "normal", "description": "low: batched and brief. normal: queued. high: jumps the queue. urgent: interrupts whatever is showing; use rarely."},
 				},
 				"required": ["text"],
@@ -42,7 +40,7 @@ func definitions() -> Array:
 		{
 			"name": "set_state",
 			"title": "Set your status",
-			"description": "Report what you are doing so it shows in the status tray. Call with 'working' when you start a long task and 'done' when it finishes (the character celebrates). Use 'needs_input' when blocked on the human, 'error' when something failed, 'idle' to clear yourself. Cheaper and less noisy than notify.",
+			"description": "Report what you are doing so it shows in the status tray. Call with 'working' when you start a long task and 'done' when it finishes. Use 'needs_input' when blocked on the human, 'error' when something failed, 'idle' to clear yourself. Cheaper and less noisy than notify.",
 			"inputSchema": {
 				"type": "object",
 				"properties": {
@@ -99,7 +97,7 @@ func call_tool(tool_name: String, arguments: Dictionary, ctx: Dictionary) -> Dic
 	match tool_name:
 		"notify":
 			var priority: Notice.Priority = PRIORITIES.find(args["priority"]) as Notice.Priority
-			return _ok(hub.notify(source, str(args["text"]), StringName(args["mood"]), priority))
+			return _ok(hub.notify(source, str(args["text"]), priority))
 		"set_state":
 			var result: Dictionary = hub.set_state(source, StringName(args["status"]), str(args.get("text", "")))
 			return _fail(result["error"]) if result.has("error") else _ok(result)

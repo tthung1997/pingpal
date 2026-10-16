@@ -10,22 +10,9 @@ enum Priority { LOW, NORMAL, HIGH, URGENT }
 
 enum Kind { NOTIFY, DONE, NEEDS_INPUT, ERROR, ASK, SUMMARY }
 
-## How each mood is acted out; the pack resolves these states to real animations.
-const MOOD_STATES: Dictionary = {
-	&"neutral": &"idle",
-	&"happy": &"happy",
-	&"excited": &"excited",
-	&"alert": &"alert",
-	&"thinking": &"thinking",
-	&"sad": &"sad",
-	&"sleepy": &"sleepy",
-	&"error": &"error",
-}
-
 var id: int = 0
 var source: SourceInfo = null
 var text: String = ""
-var mood: StringName = &"neutral"
 var priority: Priority = Priority.NORMAL
 var kind: Kind = Kind.NOTIFY
 
@@ -53,16 +40,11 @@ func is_batchable() -> bool:
 	return priority <= Priority.NORMAL and (kind == Kind.NOTIFY or kind == Kind.DONE)
 
 
-func mood_state() -> StringName:
-	return MOOD_STATES.get(mood, &"idle")
-
-
 func to_dict() -> Dictionary:
 	return {
 		"id": id,
 		"source": source.display_name if source != null else "",
 		"text": text,
-		"mood": mood,
 		"priority": Priority.keys()[priority].to_lower(),
 		"kind": Kind.keys()[kind].to_lower(),
 		"seen": seen,

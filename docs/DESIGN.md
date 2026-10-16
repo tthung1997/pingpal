@@ -9,13 +9,14 @@ and skippable.
 
 Principles
 
-1. **The AI decides, the app arbitrates.** Clients send intent (text, mood, status). Timing, order,
+1. **The AI decides, the app arbitrates.** Clients send intent (text, status). Timing, order,
    batching and attention-grabbing are the app's job, so ten chatty agents cannot make the screen
    unusable.
 2. **Nothing is lost.** Bubbles time out quickly because they are short-lived by design, but every
    notice lands in a history and every unanswered question stays answerable.
-3. **Alive when idle.** With no messages the character wanders and naps. Idle behavior is
-   also a status display: it "thinks" while agents work and gets antsy when one needs you.
+3. **Alive when idle.** With no messages the character loops one idle animation and, now and then,
+   plays a short random break. A new message always gets the same neutral attention animation:
+   the character does not judge whether the news is good or bad.
 4. **Swappable character.** Nothing outside the pack loader knows what the character looks like.
 5. **Local and boring to install.** One Godot executable, no addons, loopback-only.
 
@@ -80,8 +81,6 @@ Reused approach from Tiny Ages' `DesktopWindow` / `Skyline`:
   same rect list drives both.
 - UI is laid out in logical pixels; `content_scale_factor` follows the screen scale and rects are
   converted to physical pixels at the edge (`OverlayWindow.build_polygon`).
-- `wander_width` (default 900px) keeps the character near the right edge of an ultrawide strip, where
-  you are looking, rather than a 3440px walk away.
 - Known limits: exclusive full-screen games cover any overlay; multi-monitor placement is "current
   screen" plus a menu item to cycle.
 
@@ -92,54 +91,46 @@ sprite sheet. The app asks for **semantic states**, never animation names.
 
 ```jsonc
 {
-  "schema": 1,
+  "schema": 2,
   "id": "pip",                       // folder-safe id
   "name": "Pip",
-  "kind": "pet",                     // "pet" wanders; "avatar" stays put and emotes
   "sheet": "sheet.png",
   "frame_size": [32, 32],
   "anchor": [16, 30],                // feet, in frame px (the character stands on this point)
   "head": [16, 6],                   // where accessories sit
-  "behavior": {                      // all optional; defaults depend on `kind`
-    "wander": true, "speed": 22,     // px/s at scale 1
-    "idle_seconds": [2, 6],
-    "sleep_after_seconds": 45,       // idle time before napping is allowed
-    "weights": { "idle": 3, "wander": 5, "sleep": 2 }
+  "behavior": {                      // all optional
+    "idle_seconds": [6, 14],         // how long the idle loop runs before a break may start
+    "break_seconds": [3, 6],         // how long a break lasts
+    "breaks": ["sleep", "play"]      // states played at random, one at a time
   },
   "animations": {                    // name -> a run of frames on the sheet
-    "walk": { "row": 1, "start": 0, "frames": 4, "fps": 8, "loop": true }
+    "idle": { "row": 0, "start": 0, "frames": 4, "fps": 3, "loop": true }
   },
   "states": {                        // semantic state -> animation (or a list of fallbacks)
-    "walk": "walk", "happy": ["happy", "idle"]
+    "idle": "idle", "attention": "alert", "sleep": "sleep"
   }
 }
 ```
 
-The animation set is deliberately **species-neutral**, so a pet, a person at a desk or a robot can
-all be packs. Packs describe what the character *communicates*, never what a dog does:
+A character plays exactly three kinds of animation, so a pet, a person at a desk or a robot can
+all be packs:
 
-| State | Meaning | Shown when |
+| Kind | Meaning | Shown when |
 | --- | --- | --- |
-| `idle` | neutral resting presence | default; plain `notify` messages (with a hop) |
-| `sleep` | resting | after a long quiet |
-| `thinking` | busy | any source is `working` |
-| `happy` | success | `done`, happy/excited mood, being dragged |
-| `alert` | needs you | `needs_input`, the alert mood, a sleeper being startled |
-| `sad` | failure | `error`, the sad/error mood |
-| `walk` | optional | only for packs that wander |
+| `idle` (required) | the main loop | whenever nothing else is happening; also while being dragged |
+| `breaks` (optional) | short variations: a nap, a stretch, anything | picked at random, for `break_seconds`, after each `idle_seconds` |
+| `attention` (required) | one neutral "look at me" | every new message, for as long as its bubble is up; it never says good or bad |
 
-Required: `idle sleep thinking happy alert sad`. `walk` is required only when the pack wanders (a
-`pet`); a pack with `wander: false` (a person, a robot) never needs one. Moods without their own
-art fall back through `CharacterPack.FALLBACKS` (`excited -> happy -> idle`, `error -> sad ->
-alert -> idle`, `sleepy -> sleep -> idle`), so a minimal pack still works. Validation reports precise
-errors (wrong schema, animation outside the sheet, state pointing at a missing animation, a
-wandering pack with no `walk`). Frames are `AtlasTexture`s over the sheet; the PNG can be loaded raw
-from `user://` so adding a character needs no editor. 2-4 frames per animation is plenty.
+Break names are states: each must map (via `states`, or by sharing a name with an animation) to an
+animation other than `idle`. A pack with no breaks simply idles. States the pack does not map
+resolve to `idle`. Validation reports precise errors (wrong schema, animation outside the sheet,
+state pointing at a missing animation, a break that maps to nothing). Frames are `AtlasTexture`s
+over the sheet; the PNG can be loaded raw from `user://` so adding a character needs no editor.
+2-4 frames per animation is plenty.
 
-*Pet vs avatar* is only a different set of default `behavior` values (avatar: `wander` off, mostly
-idling and emoting). Nothing else in the app branches on it.
-
-The default **corgi** (89x131 cells, 7 animations x 4 frames) is a *pet* pack cut straight from
+The default **corgi** (89x131 cells; `idle`, `sleep`, `thinking`, `happy`, `sad` used, 4 frames
+each) idles, takes `sleep`/`happy`/`sad` breaks, and gets attention with its `thinking` pose. The
+sheet still carries the old `walk` and `alert` rows; no pack references them. It is cut straight from
 generated reference strips. `tools/art/prep_sheet.py` segments each panel (warm fur plus the dark
 outline and floating Zzz/"?"), re-pixelates to a 1/8-scale grid, aligns each animation to a shared
 ground line and body centre, and quantizes to one palette (`art/corgi/base_sheet.png`).
@@ -156,31 +147,28 @@ generated by `tools/make_placeholder_pack.gd`.
 ## 5. The idle state machine
 
 `CharacterBrain` is free of nodes and rendering; it owns position, facing and a semantic
-`anim_state`.
+`anim_state`. It is a chain of three animation kinds: idle, breaks, attention.
 
 ```mermaid
 stateDiagram-v2
   [*] --> IDLE
-  IDLE --> WANDER: weighted roll (pets only)
-  IDLE --> SLEEP: roll, only after sleep_after_seconds of quiet
-  WANDER --> IDLE: arrived / timed out
-  SLEEP --> IDLE: done
-  IDLE --> REACT: notice, attention
-  WANDER --> REACT
-  SLEEP --> REACT: startle first (alert 0.6s)
-  REACT --> REACT: reaction queued behind a startle
-  REACT --> IDLE: release / done
+  IDLE --> BREAK: after idle_seconds, a random break
+  BREAK --> IDLE: after break_seconds
+  IDLE --> ATTENTION: new message
+  BREAK --> ATTENTION: new message
+  ATTENTION --> IDLE: release (bubble gone)
   IDLE --> HELD: user drags
   HELD --> IDLE: drop
 ```
 
-- Messages **interrupt**: a notice calls `react(state, 0)` (held until its bubble goes away); a
-  sleeping character is startled awake (a short `alert`) first.
-- **Ambient state** (what all AIs are collectively doing) biases the dice: `working` -> never sleeps
-  and idles in the *thinking* pose; `needs_input`/`error` -> wanders less and periodically does an
-  attention hop with alert/sad; `done` -> occasional happy hop for ~20s.
-- Procedural effects (`hop`, `jump`) are applied by the actor on top of any animation, so they work
-  for any pack with no extra art. Priority picks them (normal and up hop, urgent jumps).
+- **Idle** loops indefinitely. Each time it is (re)entered, it runs for a fresh random
+  `idle_seconds` before the next break, including after a message or a drag.
+- **Breaks** are picked at random from the pack's `breaks`, never the same one twice in a row when
+  there is a choice, and last a random `break_seconds`.
+- Messages **interrupt** whatever is playing: a notice calls `react(effect)`, which shows the
+  `attention` animation until its bubble goes away. Status (`working`, `done`, ...) only drives the
+  tray; it does not change the animation.
+- The character stays where it is; the user can drag it along the strip.
 
 ## 6. MCP server
 
@@ -231,7 +219,7 @@ than protocol errors.
 
 | Tool | Notes |
 | --- | --- |
-| `notify(text, source?, mood?, priority?)` | queued; duplicates from the same source within 4s are dropped |
+| `notify(text, source?, priority?)` | queued; duplicates from the same source within 4s are dropped |
 | `set_state(status, source?, text?)` | updates the tray; announces `done`/`needs_input`/`error` on change |
 | `ask(question, choices?, source?, timeout_seconds?)` | holds the HTTP response open until answered/timeout; see below |
 | `clear(source?, all?)` | per-source or global wipe |
@@ -277,9 +265,9 @@ with buttons.
 
 ## 8. Testing
 
-- `tests/run_tests.gd` (headless): pack loader and fallbacks, brain behavior (wander bounds,
-  sleep/startle, ambient bias, avatars never walk, drag), hub (priority, batching, dedup, preemption,
-  durations, tray/ambient, asks incl. timeout/cancel), click-through polygon geometry, MCP protocol,
+- `tests/run_tests.gd` (headless): pack loader and validation, brain behavior (idle loop, random
+  breaks, attention interrupts, drag), hub (priority, batching, dedup, preemption,
+  durations, tray, asks incl. timeout/cancel), click-through polygon geometry, MCP protocol,
   the **HTTP server over real loopback sockets** (handshake, keep-alive, chunked, split packets, origin/host
   checks, bearer token, blocking `ask`, withdraw on hang-up) and the real main scene with synthetic
   clicks.
@@ -289,8 +277,8 @@ with buttons.
 
 ## 9. Not done yet / ideas
 
-- Sound cues per mood and a Do-Not-Disturb / quiet-hours setting.
-- More characters (including an "avatar" example); in-app pack picker; per-pack accessories offsets.
+- Sound cues and a Do-Not-Disturb / quiet-hours setting.
+- More characters; in-app pack picker; per-pack accessories offsets.
 - Tray icon / autostart; installers; macOS and Linux verification of click-through (the polygon API is
   cross-platform, but only Windows has been exercised).
 - Persisted `Mcp-Session-Id`s so client names survive restarts.

@@ -25,7 +25,7 @@ post "$session" '{"jsonrpc":"2.0","method":"notifications/initialized"}' | head 
 
 post "$session" '{"jsonrpc":"2.0","id":2,"method":"tools/list"}' | grep -q '"name":"set_state"'; check $? "tools/list lists set_state"
 post "$session" '{"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"set_state","arguments":{"status":"working"}}}' | grep -q '"isError":false'; check $? "set_state working"
-post "$session" '{"jsonrpc":"2.0","id":4,"method":"tools/call","params":{"name":"notify","arguments":{"text":"Hello from curl!","mood":"happy"}}}' | grep -q '"isError":false'; check $? "notify"
+post "$session" '{"jsonrpc":"2.0","id":4,"method":"tools/call","params":{"name":"notify","arguments":{"text":"Hello from curl!"}}}' | grep -q '"isError":false'; check $? "notify"
 post "$session" '{"jsonrpc":"2.0","id":6,"method":"tools/call","params":{"name":"set_state","arguments":{"status":"done","text":"curl finished"}}}' | grep -q '"isError":false'; check $? "set_state done"
 post "$session" '{"jsonrpc":"2.0","id":7,"method":"tools/call","params":{"name":"clear","arguments":{}}}' | grep -q '"isError":false'; check $? "clear"
 

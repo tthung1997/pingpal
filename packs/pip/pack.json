@@ -1,43 +1,30 @@
 {
-  "schema": 1,
+  "schema": 2,
   "id": "pip",
   "name": "Pip",
   "author": "PingPal",
-  "kind": "pet",
-  "description": "Placeholder blob. Wanders, naps and plays when nothing is going on.",
+  "description": "Placeholder blob. Idles, and now and then naps, plays or dances for a moment.",
   "sheet": "sheet.png",
   "frame_size": [32, 32],
   "anchor": [16, 30],
   "head": [16, 6],
   "behavior": {
-    "wander": true,
-    "speed": 22,
-    "idle_seconds": [2.0, 6.0],
-    "sleep_after_seconds": 45,
-    "weights": { "idle": 3, "wander": 5, "play": 2, "sleep": 2 }
+    "idle_seconds": [6.0, 14.0],
+    "break_seconds": [3.0, 6.0],
+    "breaks": ["sleep", "play", "dance"]
   },
   "animations": {
     "idle":     { "row": 0, "frames": 4, "fps": 3,  "loop": true },
-    "walk":     { "row": 1, "frames": 4, "fps": 8,  "loop": true },
     "sleep":    { "row": 2, "frames": 4, "fps": 2,  "loop": true },
     "play":     { "row": 3, "frames": 4, "fps": 8,  "loop": true },
-    "happy":    { "row": 4, "frames": 4, "fps": 7,  "loop": true },
     "alert":    { "row": 5, "frames": 4, "fps": 6,  "loop": true },
-    "thinking": { "row": 6, "frames": 4, "fps": 3,  "loop": true },
-    "sad":      { "row": 7, "frames": 4, "fps": 3,  "loop": true },
-    "wave":     { "row": 8, "frames": 4, "fps": 5,  "loop": true },
     "dance":    { "row": 9, "frames": 4, "fps": 8,  "loop": true }
   },
   "states": {
     "idle": "idle",
-    "walk": "walk",
+    "attention": "alert",
     "sleep": "sleep",
     "play": "play",
-    "happy": "happy",
-    "alert": "alert",
-    "thinking": "thinking",
-    "sad": "sad",
-    "wave": "wave",
     "dance": "dance"
   }
 }

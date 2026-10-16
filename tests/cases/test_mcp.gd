@@ -62,10 +62,9 @@ func test_tool_calls_drive_the_hub() -> void:
 	ctx = {"session_id": ctx["new_session_id"]}
 
 	var reply: Dictionary = await protocol.handle_payload(
-		_rpc(3, "tools/call", {"name": "notify", "arguments": {"text": "hi there", "mood": "happy"}}), ctx)
+		_rpc(3, "tools/call", {"name": "notify", "arguments": {"text": "hi there"}}), ctx)
 	eq(reply["result"]["isError"], false, "notify succeeds")
 	eq(hub.history[0].source.display_name, "Claude Code", "source comes from the session's client name")
-	eq(hub.history[0].mood, &"happy", "mood passed through")
 
 	reply = await protocol.handle_payload(
 		_rpc(4, "tools/call", {"name": "notify", "arguments": {"text": "x", "source": "Codex"}}), ctx)
@@ -74,18 +73,17 @@ func test_tool_calls_drive_the_hub() -> void:
 	reply = await protocol.handle_payload(
 		_rpc(5, "tools/call", {"name": "set_state", "arguments": {"status": "working"}}), ctx)
 	eq(JSON.parse_string(_text(reply["result"]))["status"], "working", "set_state reports the new status")
-	eq(hub.ambient(), &"working", "hub is working")
+	eq(hub.active_sources().size(), 1, "the caller shows in the tray")
 
 	reply = await protocol.handle_payload(_rpc(7, "tools/call", {"name": "clear", "arguments": {}}), ctx)
 	eq(reply["result"]["isError"], false, "clear succeeds")
-	eq(hub.ambient(), &"", "clear removed the caller's state")
+	eq(hub.active_sources().size(), 0, "clear removed the caller's state")
 
 
 func test_bad_arguments_are_tool_errors_not_protocol_errors() -> void:
 	var protocol: McpProtocol = _protocol()
 	var cases: Array[Dictionary] = [
 		{"name": "notify", "arguments": {}},
-		{"name": "notify", "arguments": {"text": "x", "mood": "furious"}},
 		{"name": "notify", "arguments": {"text": 5}},
 		{"name": "set_state", "arguments": {"status": "napping"}},
 		{"name": "ask", "arguments": {"question": "q", "choices": ["only one"]}},
@@ -207,7 +205,7 @@ func test_http_handshake_and_tool_call() -> void:
 	eq(JSON.parse_string(list["body"])["result"]["tools"].size(), 4, "tools/list over HTTP")
 
 	var call: Dictionary = await _send(port, _raw_post(JSON.stringify(_rpc(3, "tools/call",
-		{"name": "notify", "arguments": {"text": "over the wire", "mood": "excited"}})), {"Mcp-Session-Id": session}))
+		{"name": "notify", "arguments": {"text": "over the wire"}})), {"Mcp-Session-Id": session}))
 	eq(call["status"], 200, "tools/call -> 200")
 	eq(JSON.parse_string(call["body"])["result"]["isError"], false, "tool succeeded")
 	eq(hub.history.size(), 1, "the hub got the notice")
