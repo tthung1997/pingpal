@@ -158,12 +158,20 @@ static func _new_session_id() -> String:
 	return Crypto.new().generate_random_bytes(16).hex_encode()
 
 
+## Godot parses every JSON number as a float and would echo `1` back as `1.0`, which strict clients
+## (Go, Rust) reject as a mismatched request id. Whole numbers are turned back into ints.
+static func _echo_id(id: Variant) -> Variant:
+	if id is float and is_finite(id) and absf(id) < 9.0e15 and id == floorf(id):
+		return int(id)
+	return id
+
+
 static func _result(id: Variant, result: Dictionary) -> Dictionary:
-	return {"jsonrpc": "2.0", "id": id, "result": result}
+	return {"jsonrpc": "2.0", "id": _echo_id(id), "result": result}
 
 
 static func _error(id: Variant, code: int, message: String) -> Dictionary:
-	return {"jsonrpc": "2.0", "id": id, "error": {"code": code, "message": message}}
+	return {"jsonrpc": "2.0", "id": _echo_id(id), "error": {"code": code, "message": message}}
 
 
 static func parse_error() -> Dictionary:
