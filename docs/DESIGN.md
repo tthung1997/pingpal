@@ -127,7 +127,7 @@ animation other than `idle`. A pack with no breaks simply idles. States the pack
 resolve to `idle`. Validation reports precise errors (wrong schema, animation outside the sheet,
 state pointing at a missing animation, a break that maps to nothing). Frames are `AtlasTexture`s
 over the sheet; the PNG can be loaded raw from `user://` so adding a character needs no editor.
-2-4 frames per animation is plenty.
+2-4 frames per animation is plenty. See [PACKS.md](PACKS.md) for the contributor guide.
 
 The default **corgi** (89x131 cells; `idle`, `sleep`, `thinking`, `happy`, `sad` used, 4 frames
 each) idles, takes `sleep`/`happy`/`sad` breaks, and gets attention with its `thinking` pose. The

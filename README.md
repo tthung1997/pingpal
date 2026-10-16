@@ -177,7 +177,8 @@ curl -s http://127.0.0.1:7464/mcp -H 'Content-Type: application/json' \
 
 A pack is a folder with `pack.json` and a sprite sheet: `packs/<id>/` in the project, or
 `user://packs/<id>/` (`%APPDATA%\PingPal\packs\<id>`) to add one without touching the repo. See
-[docs/DESIGN.md](docs/DESIGN.md#character-packs) for the manifest.
+[docs/PACKS.md](docs/PACKS.md) for how to make and contribute one, and
+[docs/DESIGN.md](docs/DESIGN.md#4-character-packs) for the manifest.
 
 | Pack | What | Art source |
 | --- | --- | --- |
@@ -206,8 +207,8 @@ The reference images themselves are not in the repo. Re-running reproduces ident
 **Making a character.** Every pack uses the same small, species-neutral chain, so a pet, a person or
 a robot all work: one looping `idle` animation (required), one neutral `attention` animation
 (required; played for every new message) and any number of short `breaks` (a nap, a stretch, ...)
-played at random while idle. 2-4 frames each. Generate those strips, run `prep_sheet.py`, and copy
-`packs/corgi/pack.json`, which lists the breaks and their timing. The corgi sheet still contains
+played at random while idle. 2-4 frames each. The step-by-step guide, art rules, LibreSprite build
+workflow and PR checklist are in [docs/PACKS.md](docs/PACKS.md). The corgi sheet still contains
 `walk` and `alert` rows that no pack uses. The clickable area follows
 the visible pixels of the current frame, so transparent parts of a large frame never block clicks.
 
