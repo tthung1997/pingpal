@@ -40,6 +40,8 @@ var x: float = 0.0
 var facing: int = 1
 var min_x: float = 0.0
 var max_x: float = 400.0
+var limit_min: float = 0.0
+var limit_max: float = 400.0
 ## Walking speed multiplier (the actor passes its pixel scale so the sprite does not moonwalk).
 var speed_scale: float = 1.0
 ## Semantic state the actor should show; resolved through the pack.
@@ -65,7 +67,16 @@ func _init(p_pack: CharacterPack = null) -> void:
 func set_bounds(low: float, high: float) -> void:
 	min_x = low
 	max_x = maxf(high, low)
-	x = clampf(x, min_x, max_x)
+	limit_min = min_x
+	limit_max = max_x
+	x = clampf(x, limit_min, limit_max)
+
+
+## Widest the user may drag the character; wandering stays within the (narrower) bounds.
+func set_limits(low: float, high: float) -> void:
+	limit_min = minf(low, min_x)
+	limit_max = maxf(high, max_x)
+	x = clampf(x, limit_min, limit_max)
 
 
 func is_reacting() -> bool:
@@ -153,7 +164,7 @@ func drag_to(new_x: float) -> void:
 	_holding = false
 	if new_x != x:
 		facing = 1 if new_x > x else -1
-	x = clampf(new_x, min_x, max_x)
+	x = clampf(new_x, limit_min, limit_max)
 
 
 func drop() -> void:

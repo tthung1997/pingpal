@@ -27,13 +27,23 @@ var fps_cap: int = 30
 ## When set, MCP clients must send `Authorization: Bearer <token>`.
 var auth_token: String = ""
 ## Overlay size in UI pixels: the strip's height, and the corner window's width.
-var strip_height: int = 320
+var strip_height: int = 420
 var corner_width: int = 480
+## In strip mode the character only roams this far in from the right edge, so it stays near
+## where you look instead of wandering across an ultrawide monitor.
+var wander_width: int = 900
 ## Keeps the character this far from the window edge so it does not hide under screen corners.
 var edge_margin: int = 16
 
 ## Values stored in the settings file (only these are saved).
 var _stored: Dictionary = {}
+
+## Developer flags: `--screenshot=out.png [--screenshot-delay=4]` saves the rendered overlay
+## (with transparency) after a delay and quits. Handy for docs and for checking rendering on
+## machines where a full-screen game would cover the real overlay.
+var screenshot_path: String = ""
+var screenshot_delay: float = 4.0
+var screenshot_history: bool = false
 
 
 func _ready() -> void:
@@ -75,6 +85,12 @@ func _apply_flag(arg: String) -> void:
 		"port", "mode", "pack", "scale", "token":
 			_assign("auth_token" if key == "token" else "pixel_scale" if key == "scale" \
 				else "pack_id" if key == "pack" else key, value)
+		"screenshot":
+			screenshot_path = value
+		"screenshot-history":
+			screenshot_history = true
+		"screenshot-delay":
+			screenshot_delay = clampf(float(value), 0.5, 60.0) if value.is_valid_float() else screenshot_delay
 		"no-always-on-top":
 			always_on_top = false
 		"no-click-through":
