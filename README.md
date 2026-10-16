@@ -4,13 +4,13 @@ A tiny character that lives in a corner of your screen and tells you what your A
 
 PingPal runs an **MCP server** on your machine. Point Claude Code, GitHub Copilot, Codex, VS Code or any
 other MCP client at it, and the AI decides what the character says and does: *"Tests are green"*,
-*"Need your call on the migration"*, a happy dance when a long task finishes. You stop babysitting
+*"Need your call on the migration"*, a happy hop when a long task finishes. You stop babysitting
 five terminals and just glance at the character.
 
 - Transparent, always-on-top, **click-through** except on the character and its bubbles.
 - Several AIs at once: each gets its own color, accessory and tray chip; urgent things jump the queue, floods are batched ("4 agents finished").
-- When nobody is talking, it does its own thing: wanders, naps, plays.
-- Characters are swappable **packs** (sprite sheet + JSON). Ships with one placeholder, *Pip*.
+- When nobody is talking, it does its own thing: wanders and naps.
+- Characters are swappable **packs** (sprite sheet + JSON). Ships with a pixel-art corgi (default) and a placeholder blob, *Pip*.
 
 Built with Godot 4.7 (GDScript, no addons). See [docs/DESIGN.md](docs/DESIGN.md) for how it works.
 
@@ -24,7 +24,7 @@ cd pingpal
 godot --path .            # or open project.godot in the editor and press F5
 ```
 
-The first launch imports assets, then Pip appears at the bottom-right of your main screen and says
+The first launch imports assets, then the corgi appears at the bottom-right of your main screen and says
 *"Hi! Listening on port 7464"*. The MCP endpoint is:
 
 ```
@@ -61,8 +61,8 @@ godot --path . -- --port=9000 --mode=corner --scale=4 --pack=pip --token=secret
 | --- | --- | --- |
 | `--port=N` | MCP port (`0` picks a free one; it is printed at startup) | `7464` |
 | `--mode=strip\|corner\|window` | Full-width strip along the bottom, small corner window, or a normal window (handy for debugging) | `strip` |
-| `--pack=ID` | Character pack id | `pip` |
-| `--scale=N` | Character magnification (1-8) | `3` |
+| `--pack=ID` | Character pack id | `corgi` |
+| `--scale=N` | Character magnification (1-8) | `2` |
 | `--token=SECRET` | Require `Authorization: Bearer SECRET` from clients | off |
 | `--no-always-on-top`, `--no-click-through` | Opt out of overlay behaviour | |
 | `--screenshot=PATH` `[--screenshot-delay=S] [--screenshot-history]` | Dev: save the rendered overlay (with alpha) and quit | |
@@ -155,7 +155,6 @@ PingPal sends usage instructions during the MCP handshake, but a line in your ag
 | --- | --- | --- |
 | `notify` | `text`, `source?`, `mood?` neutral/happy/excited/alert/thinking/sad/sleepy/error, `priority?` low/normal/high/urgent | Speech bubble + reaction. Low priority is batched; urgent interrupts. |
 | `set_state` | `status` working/done/needs_input/error/idle, `source?`, `text?` | Updates the tray chip. `done`, `needs_input` and `error` also announce themselves. |
-| `perform` | `action` wave/jump/dance/spin/cheer/play/think/alert/sad/sleep/wake/wander/idle, `source?`, `seconds?` | A physical action with no text. |
 | `ask` | `question`, `choices?` (2-4, default Yes/No), `source?`, `timeout_seconds?` (default 45) | Shows buttons and **waits** for a click. Returns `{answered, choice, index}` or `{answered:false, reason}`. |
 | `clear` | `source?`, `all?` | Removes your queued messages, bubble, questions and status (or everyone's with `all`). |
 
@@ -179,14 +178,37 @@ curl -s http://127.0.0.1:7464/mcp -H 'Content-Type: application/json' \
 
 A pack is a folder with `pack.json` and a sprite sheet: `packs/<id>/` in the project, or
 `user://packs/<id>/` (`%APPDATA%\PingPal\packs\<id>`) to add one without touching the repo. See
-[docs/DESIGN.md](docs/DESIGN.md#character-packs) for the manifest. `packs/pip/` is a complete
-example; regenerate its placeholder art with:
+[docs/DESIGN.md](docs/DESIGN.md#character-packs) for the manifest.
+
+| Pack | What | Art source |
+| --- | --- | --- |
+| `corgi` (default) | A ginger corgi pet: trots around and naps; thinking, happy, alert and sad reactions | `art/corgi/`, built by `tools/art/prep_sheet.py` + LibreSprite |
+| `pip` | Placeholder blue blob that wanders | `tools/make_placeholder_pack.gd` |
+
+The corgi is the reference art itself, not a redraw. It came from ten generated 4-panel strips
+(one per animation, same character on a dark floor). `tools/art/prep_sheet.py` cuts the dog out of
+each panel (fur colours plus its dark outline, with the Zzz, "?" and tears), re-pixelates it onto a
+real 1/8-scale pixel grid, aligns every animation to one ground line and body centre, and quantizes
+the whole sheet to one 32-colour palette: `art/corgi/base_sheet.png` + `layout.json` (committed).
+`tools/art/corgi.js` then runs headless in [LibreSprite](https://libresprite.github.io/) to add the
+few symbols the references lack (hearts, music notes, "!") and writes `packs/corgi/sheet.png`.
+Needs `python` + Pillow + numpy; set `LIBRESPRITE_EXE` if LibreSprite is not on `PATH`.
 
 ```powershell
-godot --headless --path . --script res://tools/make_placeholder_pack.gd
+python tools/art/build.py corgi                           # base sheet -> packs/corgi/sheet.png
+python tools/art/preview.py packs/corgi/sheet.png out.png # enlarged preview
+# re-make the base sheet from reference strips (idle, walk, sleep, thinking, happy, alert, sad):
+python tools/art/prep_sheet.py path/to/refs art/corgi/base_sheet.png --layout art/corgi/layout.json
 ```
 
-A `"kind": "pet"` pack wanders, naps and plays; `"kind": "avatar"` stays put and only emotes.
+The reference images themselves are not in the repo. Re-running reproduces identical pixels.
+
+**Making a character.** Every pack uses the same small, species-neutral set of animations, so a pet,
+a person or a robot all work: `idle`, `sleep`, `thinking` (an AI is working), `happy` (success),
+`alert` (needs you) and `sad` (failure), 2-4 frames each, plus `walk` only if it wanders. Generate
+those strips, run `prep_sheet.py`, and copy `packs/corgi/pack.json`. A `"kind": "pet"` pack wanders
+and naps; `"kind": "avatar"` stays put and only emotes (no `walk` needed). The clickable area follows
+the visible pixels of the current frame, so transparent parts of a large frame never block clicks.
 
 ## Tests
 

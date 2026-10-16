@@ -59,14 +59,12 @@ Check ($note.StatusCode -eq 202) "notifications/initialized -> 202 Accepted"
 
 $list = (Invoke-Mcp @{ jsonrpc = "2.0"; id = 2; method = "tools/list" }).Content | ConvertFrom-Json
 $names = ($list.result.tools | ForEach-Object { $_.name } | Sort-Object) -join ","
-Check ($names -eq "ask,clear,notify,perform,set_state") "tools/list -> $names"
+Check ($names -eq "ask,clear,notify,set_state") "tools/list -> $names"
 
 $r = Invoke-Tool "set_state" @{ status = "working"; text = "running the test script" } 3
 Check (-not $r.isError) "set_state working"
 $r = Invoke-Tool "notify" @{ text = "Hello from the smoke test!"; mood = "happy" } 4
 Check (-not $r.isError) "notify: $($r.content[0].text)"
-$r = Invoke-Tool "perform" @{ action = "wave" } 5
-Check (-not $r.isError) "perform wave"
 $r = Invoke-Tool "notify" @{ text = "bad mood"; mood = "furious" } 6
 Check ($r.isError -eq $true) "invalid arguments come back as isError: $($r.content[0].text)"
 

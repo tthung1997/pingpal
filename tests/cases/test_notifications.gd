@@ -184,13 +184,19 @@ func test_clear_one_source_and_all() -> void:
 	eq(hub.active_sources().size(), 0, "clear() with no source wipes everything")
 
 
-func test_perform_emits_action_for_the_character() -> void:
-	var hub: NotificationManager = _hub()
-	var got: Array = []
-	hub.action_requested.connect(func(action: StringName, seconds: float, source: SourceInfo) -> void:
-		got.append([action, seconds, source.display_name]))
-	hub.perform("Codex", &"wave", 2.0)
-	eq(got, [[&"wave", 2.0, "Codex"]], "action reaches listeners")
+func test_moods_map_to_species_neutral_states() -> void:
+	var notice: Notice = Notice.new()
+	var expected: Dictionary = {
+		&"neutral": &"idle", &"happy": &"happy", &"excited": &"excited", &"alert": &"alert",
+		&"thinking": &"thinking", &"sad": &"sad", &"sleepy": &"sleepy", &"error": &"error",
+	}
+	for mood: StringName in expected:
+		notice.mood = mood
+		eq(notice.mood_state(), expected[mood], "mood '%s' is acted out as '%s'" % [mood, expected[mood]])
+	for pack_id: String in ["corgi", "pip"]:
+		var pack: CharacterPack = CharacterPack.load_by_id(pack_id)
+		for state: StringName in expected.values():
+			check(pack.resolve(state) != &"", "%s can act out '%s'" % [pack_id, state])
 
 
 func test_text_is_sanitized_and_capped() -> void:

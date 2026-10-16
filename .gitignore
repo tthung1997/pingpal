@@ -21,3 +21,4 @@ desktop.ini
 # Logs / local scratch
 *.log
 /local/
+tools/art/dist/

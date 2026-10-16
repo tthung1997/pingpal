@@ -1,0 +1,37 @@
+{
+  "schema": 1,
+  "id": "corgi",
+  "name": "Corgi",
+  "author": "PingPal",
+  "kind": "pet",
+  "description": "A ginger corgi. Trots around the strip and naps when nothing is going on. Pixel art cut from generated reference strips (art/corgi) and finished in LibreSprite (tools/art/corgi.js).",
+  "sheet": "sheet.png",
+  "frame_size": [89, 131],
+  "anchor": [39, 129],
+  "head": [39, 56],
+  "behavior": {
+    "wander": true,
+    "speed": 22,
+    "idle_seconds": [2.0, 6.0],
+    "sleep_after_seconds": 45,
+    "weights": { "idle": 3, "wander": 5, "sleep": 2 }
+  },
+  "animations": {
+    "idle":     { "row": 0, "frames": 4, "fps": 3, "loop": true },
+    "walk":     { "row": 1, "frames": 4, "fps": 7, "loop": true },
+    "sleep":    { "row": 2, "frames": 4, "fps": 2, "loop": true },
+    "thinking": { "row": 3, "frames": 4, "fps": 3, "loop": true },
+    "happy":    { "row": 4, "frames": 4, "fps": 6, "loop": true },
+    "alert":    { "row": 5, "frames": 4, "fps": 5, "loop": true },
+    "sad":      { "row": 6, "frames": 4, "fps": 3, "loop": true }
+  },
+  "states": {
+    "idle": "idle",
+    "walk": "walk",
+    "sleep": "sleep",
+    "thinking": "thinking",
+    "happy": "happy",
+    "alert": "alert",
+    "sad": "sad"
+  }
+}

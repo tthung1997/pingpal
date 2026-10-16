@@ -1,34 +1,21 @@
 class_name CharacterBrain
 extends RefCounted
 ## The character's idle state machine. It decides what the character does when nobody is
-## talking to it (wander, nap, play, fidget) and yields to messages.
+## talking to it (wander, nap, fidget) and yields to messages.
 ##
 ## It is deliberately free of nodes and rendering: it owns position, facing and a *semantic*
 ## animation state, and the actor turns that into pixels. That keeps it unit-testable.
 ##
-##   IDLE <-> WANDER / PLAY / SLEEP          chosen by weighted dice, tuned by the pack's `behavior`
-##   any  -> REACT                           a notice or an AI-requested action took over
+## The semantic states are species-neutral (idle, walk, sleep, thinking, happy, alert, sad), so
+## the same brain drives a pet, a person or a robot.
+##
+##   IDLE <-> WANDER / SLEEP                 chosen by weighted dice, tuned by the pack's `behavior`
+##   any  -> REACT                           a notice took over
 ##   REACT -> IDLE                           when the reaction ends and nothing is queued
 ##   any  -> HELD -> IDLE                    the user is dragging the character
 
-enum Mode { IDLE, WANDER, SLEEP, PLAY, REACT, HELD }
+enum Mode { IDLE, WANDER, SLEEP, REACT, HELD }
 
-## AI-requestable actions: state to animate, seconds, and a procedural effect for the actor.
-const ACTIONS: Dictionary = {
-	&"wave": {"state": &"wave", "seconds": 2.5, "effect": &""},
-	&"jump": {"state": &"happy", "seconds": 1.2, "effect": &"jump"},
-	&"cheer": {"state": &"happy", "seconds": 2.5, "effect": &"jump"},
-	&"spin": {"state": &"happy", "seconds": 1.2, "effect": &"spin"},
-	&"dance": {"state": &"dance", "seconds": 4.0, "effect": &""},
-	&"play": {"state": &"play", "seconds": 4.0, "effect": &""},
-	&"think": {"state": &"thinking", "seconds": 3.0, "effect": &""},
-	&"alert": {"state": &"alert", "seconds": 2.0, "effect": &"hop"},
-	&"sad": {"state": &"sad", "seconds": 3.0, "effect": &""},
-}
-## Actions that change the idle state machine itself rather than play a one-off animation.
-const MODE_ACTIONS: Array[StringName] = [&"idle", &"wander", &"sleep", &"wake"]
-
-const MAX_QUEUED_ACTIONS: int = 4
 const STARTLE_SECONDS: float = 0.6
 const MIN_WANDER_DISTANCE: float = 48.0
 
@@ -131,32 +118,6 @@ func release() -> void:
 		_end_reaction()
 
 
-## Runs an AI-requested action. One-off animations queue behind a running reaction.
-## Returns false for an unknown action.
-func perform(action: StringName, seconds: float = 0.0) -> bool:
-	if MODE_ACTIONS.has(action):
-		_perform_mode_action(action, seconds)
-		return true
-	if not ACTIONS.has(action):
-		return false
-	var spec: Dictionary = ACTIONS[action]
-	var item: Dictionary = {
-		"state": spec["state"],
-		"seconds": seconds if seconds > 0.0 else float(spec["seconds"]),
-		"effect": spec["effect"],
-	}
-	_since_event = 0.0
-	if mode == Mode.REACT or mode == Mode.HELD:
-		if _queue.size() < MAX_QUEUED_ACTIONS:
-			_queue.append(item)
-	elif mode == Mode.SLEEP:
-		_queue.push_back(item)
-		_start_reaction({"state": &"alert", "seconds": STARTLE_SECONDS, "effect": &"hop"})
-	else:
-		_start_reaction(item)
-	return true
-
-
 func drag_to(new_x: float) -> void:
 	mode = Mode.HELD
 	anim_state = &"happy"
@@ -170,25 +131,6 @@ func drag_to(new_x: float) -> void:
 func drop() -> void:
 	if mode == Mode.HELD:
 		_enter_idle(1.0)
-
-
-func _perform_mode_action(action: StringName, seconds: float) -> void:
-	_queue.clear()
-	_since_event = 0.0
-	match action:
-		&"idle":
-			_enter_idle(seconds if seconds > 0.0 else _idle_seconds())
-		&"wander":
-			if pack != null and pack.wanders():
-				_start_wander()
-			else:
-				_enter_idle(_idle_seconds())
-		&"sleep":
-			_enter_sleep(seconds if seconds > 0.0 else rng.randf_range(20.0, 45.0))
-			_since_event = 1.0e9
-		&"wake":
-			if mode == Mode.SLEEP:
-				_enter_idle(1.0)
 
 
 func _start_reaction(item: Dictionary) -> void:
@@ -251,10 +193,8 @@ func _weights() -> Dictionary:
 		weights[&"sleep"] = 0.0
 	match ambient:
 		&"working":
-			weights[&"play"] = 0.0
 			weights[&"idle"] = float(weights.get(&"idle", 0.0)) + 4.0
 		&"needs_input", &"error":
-			weights[&"play"] = 0.0
 			weights[&"wander"] = float(weights.get(&"wander", 0.0)) * 0.3
 			weights[&"attention"] = 6.0
 		&"done":
@@ -278,11 +218,6 @@ func _pick_next() -> void:
 	match choice:
 		&"wander":
 			_start_wander()
-		&"play":
-			mode = Mode.PLAY
-			anim_state = &"play"
-			effect = &""
-			_time_left = rng.randf_range(3.0, 6.0)
 		&"sleep":
 			_enter_sleep(rng.randf_range(20.0, 60.0))
 		&"attention":

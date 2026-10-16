@@ -22,11 +22,6 @@ func _init(p_hub: NotificationManager = null) -> void:
 
 
 func definitions() -> Array:
-	var actions: Array = []
-	for action: StringName in CharacterBrain.ACTIONS:
-		actions.append(String(action))
-	for action: StringName in CharacterBrain.MODE_ACTIONS:
-		actions.append(String(action))
 	return [
 		{
 			"name": "notify",
@@ -58,21 +53,6 @@ func definitions() -> Array:
 				"required": ["status"],
 			},
 			"annotations": {"readOnlyHint": false, "destructiveHint": false, "idempotentHint": true, "openWorldHint": false},
-		},
-		{
-			"name": "perform",
-			"title": "Perform an action",
-			"description": "Make the character do something playful or expressive without text: wave, jump, dance, spin, cheer, play, think, alert, sad, sleep, wake, wander, idle.",
-			"inputSchema": {
-				"type": "object",
-				"properties": {
-					"source": SOURCE_SCHEMA,
-					"action": {"type": "string", "enum": actions},
-					"seconds": {"type": "number", "minimum": 0.5, "maximum": 30, "description": "Optional duration override."},
-				},
-				"required": ["action"],
-			},
-			"annotations": {"readOnlyHint": false, "destructiveHint": false, "idempotentHint": false, "openWorldHint": false},
 		},
 		{
 			"name": "ask",
@@ -123,8 +103,6 @@ func call_tool(tool_name: String, arguments: Dictionary, ctx: Dictionary) -> Dic
 		"set_state":
 			var result: Dictionary = hub.set_state(source, StringName(args["status"]), str(args.get("text", "")))
 			return _fail(result["error"]) if result.has("error") else _ok(result)
-		"perform":
-			return _ok(hub.perform(source, StringName(args["action"]), float(args.get("seconds", 0.0))))
 		"ask":
 			var choices: PackedStringArray = PackedStringArray(args["choices"])
 			var answer: Dictionary = await hub.ask(source, str(args["question"]), choices,

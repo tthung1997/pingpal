@@ -7,6 +7,9 @@ extends Node
 ##   PingHub signals -> Main -> CharacterBrain / SpeechBubble / StatusTray / HistoryPanel
 
 const GROUND_MARGIN: float = 6.0
+## Per-source hats/antennas on the character while its bubble is up. Off until they are redrawn
+## to match the pixel art; the source colour still shows on the bubble and tray chips.
+const SHOW_ACCESSORIES: bool = false
 const STACK_GAP: float = 4.0
 
 var _overlay: OverlayWindow
@@ -42,9 +45,20 @@ func _ready() -> void:
 	_connect_hub()
 	_start_server()
 	_overlay.apply()
-	PingHub.notify("PingPal", "Hi! Listening on port %d" % _server.port(), &"happy", Notice.Priority.LOW)
+	if PingConfig.preview.is_empty():
+		PingHub.notify("PingPal", "Hi! Listening on port %d" % _server.port(), &"happy", Notice.Priority.LOW)
+	else:
+		_start_preview()
 	if not PingConfig.screenshot_path.is_empty():
 		_take_screenshot_later()
+
+
+## `--preview=<state>`: hold one animation forever (no greeting, no wandering) to inspect it.
+func _start_preview() -> void:
+	var state: StringName = StringName(PingConfig.preview)
+	var animation: StringName = _pack.resolve(state)
+	print("PingPal preview: state '%s' -> animation '%s'" % [state, animation])
+	_brain.react(state, 0.0)
 
 
 func _take_screenshot_later() -> void:
@@ -52,9 +66,15 @@ func _take_screenshot_later() -> void:
 	if PingConfig.screenshot_history:
 		_open_history()
 		await get_tree().create_timer(0.5).timeout
-	var image: Image = get_viewport().get_texture().get_image()
-	var err: Error = image.save_png(PingConfig.screenshot_path)
-	print("PingPal screenshot %s (%s)" % [PingConfig.screenshot_path, error_string(err)])
+	var count: int = maxi(PingConfig.screenshot_count, 1)
+	for index: int in count:
+		var path: String = PingConfig.screenshot_path
+		if count > 1:
+			path = "%s_%02d.png" % [path.get_basename(), index]
+		var err: Error = get_viewport().get_texture().get_image().save_png(path)
+		print("PingPal screenshot %s (%s)" % [path, error_string(err)])
+		if index < count - 1:
+			await get_tree().create_timer(PingConfig.screenshot_interval).timeout
 	get_tree().quit()
 
 
@@ -105,7 +125,6 @@ func _connect_hub() -> void:
 	PingHub.source_changed.connect(_on_source_changed)
 	PingHub.ambient_changed.connect(_brain.set_ambient)
 	PingHub.history_changed.connect(_refresh_history)
-	PingHub.action_requested.connect(_on_action_requested)
 
 
 func _start_server() -> void:
@@ -151,7 +170,7 @@ func _layout() -> void:
 	_hitbox.position = hit.position
 	_hitbox.size = hit.size
 	var center_x: float = hit.get_center().x
-	var top: float = hit.position.y - 20.0
+	var top: float = hit.position.y - 8.0
 	if _tray.visible:
 		_tray.size = _tray.get_combined_minimum_size()
 		_tray.position = Vector2(_clamp_x(center_x - _tray.size.x * 0.5, _tray.size.x), top - _tray.size.y)
@@ -206,13 +225,14 @@ func _on_notice_shown(notice: Notice) -> void:
 	elif notice.priority >= Notice.Priority.NORMAL:
 		effect = &"hop"
 	_brain.react(notice.mood_state(), 0.0, effect)
-	if notice.source != null and notice.source.key != SourceRegistry.SYSTEM_KEY:
+	if SHOW_ACCESSORIES and notice.source != null and notice.source.key != SourceRegistry.SYSTEM_KEY:
 		_actor.show_accessory(notice.source)
 	_bubble.show_notice(notice)
 
 
 func _on_notice_hidden(_notice: Notice) -> void:
-	_brain.release()
+	if PingConfig.preview.is_empty():
+		_brain.release()
 	_actor.hide_accessory()
 	_bubble.hide_bubble()
 
@@ -220,10 +240,6 @@ func _on_notice_hidden(_notice: Notice) -> void:
 func _on_source_changed(_source: SourceInfo) -> void:
 	_tray.show_sources(PingHub.active_sources())
 	_refresh_history()
-
-
-func _on_action_requested(action: StringName, seconds: float, _source: SourceInfo) -> void:
-	_brain.perform(action, seconds)
 
 
 func _on_choice_picked(ask_id: int, index: int) -> void:
