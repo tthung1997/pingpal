@@ -198,6 +198,7 @@ func test_http_handshake_and_tool_call() -> void:
 	var session: String = init["headers"].get("mcp-session-id", "")
 	check(session.length() >= 16, "a session id is issued")
 	eq(JSON.parse_string(init["body"])["result"]["serverInfo"]["name"], "pingpal", "initialize body")
+	check(init["body"].contains('"id":1,'), "integer ids are echoed as integers, not 1.0")
 
 	var note: Dictionary = await _send(port, _raw_post('{"jsonrpc":"2.0","method":"notifications/initialized"}', {"Mcp-Session-Id": session}))
 	eq(note["status"], 202, "notification -> 202 Accepted")
