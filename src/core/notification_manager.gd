@@ -13,7 +13,6 @@ extends Node
 signal notice_shown(notice: Notice)
 signal notice_hidden(notice: Notice)
 signal source_changed(source: SourceInfo)
-signal ambient_changed(ambient: StringName)
 signal history_changed
 signal cleared(source_key: String)
 
@@ -30,7 +29,6 @@ const DONE_FADE_SECONDS: float = 90.0
 const ERROR_FADE_SECONDS: float = 600.0
 const WORKING_STALE_SECONDS: float = 1800.0
 const NEEDS_INPUT_STALE_SECONDS: float = 3600.0
-const DONE_AMBIENT_SECONDS: float = 20.0
 
 var registry: SourceRegistry = SourceRegistry.new()
 ## Newest last. Includes notices that were folded into a summary.
@@ -45,7 +43,6 @@ var _clock: float = 0.0
 var _current_left: float = 0.0
 var _gap_left: float = 0.0
 var _next_id: int = 1
-var _ambient: StringName = &""
 
 
 func _process(delta: float) -> void:
@@ -54,10 +51,6 @@ func _process(delta: float) -> void:
 
 func now() -> float:
 	return _clock
-
-
-func ambient() -> StringName:
-	return _ambient
 
 
 func queue_size() -> int:
@@ -84,10 +77,10 @@ func active_sources() -> Array[SourceInfo]:
 
 # --- Tool-facing API ---------------------------------------------------------------------------
 
-func notify(source_name: String, text: String, mood: StringName = &"neutral",
+func notify(source_name: String, text: String,
 		priority: Notice.Priority = Notice.Priority.NORMAL) -> Dictionary:
 	var source: SourceInfo = registry.resolve(source_name)
-	return _post(source, text, mood, priority, Notice.Kind.NOTIFY)
+	return _post(source, text, priority, Notice.Kind.NOTIFY)
 
 
 func set_state(source_name: String, status: StringName, text: String = "") -> Dictionary:
@@ -105,11 +98,11 @@ func set_state(source_name: String, status: StringName, text: String = "") -> Di
 	if changed:
 		match new_status:
 			SourceInfo.Status.DONE:
-				_post(source, text if not text.is_empty() else "All done!", &"happy", Notice.Priority.NORMAL, Notice.Kind.DONE)
+				_post(source, text if not text.is_empty() else "All done!", Notice.Priority.NORMAL, Notice.Kind.DONE)
 			SourceInfo.Status.NEEDS_INPUT:
-				_post(source, text if not text.is_empty() else "I need your input.", &"alert", Notice.Priority.HIGH, Notice.Kind.NEEDS_INPUT)
+				_post(source, text if not text.is_empty() else "I need your input.", Notice.Priority.HIGH, Notice.Kind.NEEDS_INPUT)
 			SourceInfo.Status.ERROR:
-				_post(source, text if not text.is_empty() else "Something went wrong.", &"error", Notice.Priority.HIGH, Notice.Kind.ERROR)
+				_post(source, text if not text.is_empty() else "Something went wrong.", Notice.Priority.HIGH, Notice.Kind.ERROR)
 	return {"source": source.display_name, "status": status, "previous": previous, "changed": changed}
 
 
@@ -119,7 +112,7 @@ func set_state(source_name: String, status: StringName, text: String = "") -> Di
 func ask(source_name: String, question: String, choices: PackedStringArray,
 		timeout: float = DEFAULT_ASK_TIMEOUT, owner: int = 0) -> Dictionary:
 	var source: SourceInfo = registry.resolve(source_name)
-	var notice: Notice = _make_notice(source, question, &"alert", Notice.Priority.HIGH, Notice.Kind.ASK)
+	var notice: Notice = _make_notice(source, question, Notice.Priority.HIGH, Notice.Kind.ASK)
 	notice.choices = choices
 	notice.owner = owner
 	notice.deadline = _clock + clampf(timeout, 1.0, 600.0)
@@ -207,7 +200,7 @@ func advance(delta: float) -> void:
 
 # --- Internals ---------------------------------------------------------------------------------
 
-func _post(source: SourceInfo, text: String, mood: StringName, priority: Notice.Priority,
+func _post(source: SourceInfo, text: String, priority: Notice.Priority,
 		kind: Notice.Kind) -> Dictionary:
 	text = _clip(text)
 	source.last_seen = _clock
@@ -217,7 +210,7 @@ func _post(source: SourceInfo, text: String, mood: StringName, priority: Notice.
 	_recent[dedup_key] = _clock
 	if _recent.size() > 64:
 		_prune_recent()
-	var notice: Notice = _make_notice(source, text, mood, priority, kind)
+	var notice: Notice = _make_notice(source, text, priority, kind)
 	_enqueue(notice)
 	return {
 		"source": source.display_name,
@@ -227,14 +220,13 @@ func _post(source: SourceInfo, text: String, mood: StringName, priority: Notice.
 	}
 
 
-func _make_notice(source: SourceInfo, text: String, mood: StringName,
+func _make_notice(source: SourceInfo, text: String,
 		priority: Notice.Priority, kind: Notice.Kind) -> Notice:
 	var notice: Notice = Notice.new()
 	notice.id = _next_id
 	_next_id += 1
 	notice.source = source
 	notice.text = _clip(text)
-	notice.mood = mood if Notice.MOOD_STATES.has(mood) else &"neutral"
 	notice.priority = priority
 	notice.kind = kind
 	notice.clock_time = _clock
@@ -309,7 +301,6 @@ func _summarize(group: Array[Notice]) -> Notice:
 	summary.source = registry.system() if names.size() > 1 else group[0].source
 	summary.kind = Notice.Kind.SUMMARY
 	summary.priority = top_priority
-	summary.mood = &"happy" if all_done else &"neutral"
 	summary.clock_time = _clock
 	summary.wall_time = Time.get_unix_time_from_system()
 	summary.batched = group
@@ -380,7 +371,6 @@ func _apply_status(source: SourceInfo, status: SourceInfo.Status, text: String) 
 	source.status_since = _clock
 	source.last_seen = _clock
 	source_changed.emit(source)
-	_recompute_ambient()
 
 
 func _expire() -> void:
@@ -398,7 +388,6 @@ func _expire() -> void:
 				expired = age > NEEDS_INPUT_STALE_SECONDS and not _has_pending_ask(source)
 		if expired:
 			_apply_status(source, SourceInfo.Status.IDLE, "")
-	_recompute_ambient()
 
 
 func _has_pending_ask(source: SourceInfo) -> bool:
@@ -406,21 +395,6 @@ func _has_pending_ask(source: SourceInfo) -> bool:
 		if notice.source == source:
 			return true
 	return false
-
-
-func _recompute_ambient() -> void:
-	var ambient_now: StringName = &""
-	var best_rank: int = 0
-	for source: SourceInfo in registry.all():
-		var rank: int = _status_rank(source.status)
-		if source.status == SourceInfo.Status.DONE and _clock - source.status_since > DONE_AMBIENT_SECONDS:
-			rank = 0
-		if rank > best_rank:
-			best_rank = rank
-			ambient_now = source.status_name()
-	if ambient_now != _ambient:
-		_ambient = ambient_now
-		ambient_changed.emit(_ambient)
 
 
 static func _status_rank(status: SourceInfo.Status) -> int:

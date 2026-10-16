@@ -11,7 +11,8 @@ const GROUND_MARGIN: float = 6.0
 ## to match the pixel art; the source colour still shows on the bubble and tray chips.
 const SHOW_ACCESSORIES: bool = false
 const STACK_GAP: float = 4.0
-
+## The character starts this far in from the right edge, where you are likely looking.
+const START_INSET: float = 260.0
 var _overlay: OverlayWindow
 var _stage: Control
 var _pack: CharacterPack
@@ -46,19 +47,19 @@ func _ready() -> void:
 	_start_server()
 	_overlay.apply()
 	if PingConfig.preview.is_empty():
-		PingHub.notify("PingPal", "Hi! Listening on port %d" % _server.port(), &"happy", Notice.Priority.LOW)
+		PingHub.notify("PingPal", "Hi! Listening on port %d" % _server.port(), Notice.Priority.LOW)
 	else:
 		_start_preview()
 	if not PingConfig.screenshot_path.is_empty():
 		_take_screenshot_later()
 
 
-## `--preview=<state>`: hold one animation forever (no greeting, no wandering) to inspect it.
+## `--preview=<state>`: hold one animation forever (no greeting, no breaks) to inspect it.
 func _start_preview() -> void:
 	var state: StringName = StringName(PingConfig.preview)
 	var animation: StringName = _pack.resolve(state)
 	print("PingPal preview: state '%s' -> animation '%s'" % [state, animation])
-	_brain.react(state, 0.0)
+	_brain.preview(state)
 
 
 func _take_screenshot_later() -> void:
@@ -89,7 +90,6 @@ func _build_scene() -> void:
 	add_child(_stage)
 
 	_brain = CharacterBrain.new(_pack)
-	_brain.speed_scale = PingConfig.pixel_scale
 	_actor = CharacterActor.new()
 	_stage.add_child(_actor)
 	_actor.setup(_pack, _brain, PingConfig.pixel_scale)
@@ -123,7 +123,6 @@ func _connect_hub() -> void:
 	PingHub.notice_shown.connect(_on_notice_shown)
 	PingHub.notice_hidden.connect(_on_notice_hidden)
 	PingHub.source_changed.connect(_on_source_changed)
-	PingHub.ambient_changed.connect(_brain.set_ambient)
 	PingHub.history_changed.connect(_refresh_history)
 
 
@@ -137,7 +136,7 @@ func _start_server() -> void:
 	if err != OK:
 		var message: String = "Can't listen on port %d (%s). Is PingPal already running?" % [PingConfig.port, error_string(err)]
 		push_error("PingPal: " + message)
-		PingHub.notify("PingPal", message, &"sad", Notice.Priority.HIGH)
+		PingHub.notify("PingPal", message, Notice.Priority.HIGH)
 		return
 	print("PingPal MCP server listening on http://%s:%d%s" % [McpHttpServer.BIND_ADDRESS, _server.port(), McpHttpServer.MCP_PATH])
 
@@ -149,13 +148,11 @@ func _on_layout_changed(logical_size: Vector2) -> void:
 	var half_width: float = _pack.frame_size.x * PingConfig.pixel_scale * 0.5
 	var edge: float = PingConfig.edge_margin + half_width
 	var right: float = _world.x - edge
-	var left: float = maxf(edge, _world.x - PingConfig.wander_width)
 	_actor.floor_y = _world.y - GROUND_MARGIN
-	_brain.set_bounds(left, right)
 	_brain.set_limits(edge, right)
 	if not _placed:
 		_placed = true
-		_brain.x = lerpf(left, right, 0.7)
+		_brain.x = maxf(edge, right - START_INSET)
 
 
 func _process(_delta: float) -> void:
@@ -219,12 +216,7 @@ func _clickable_rects() -> Array[Rect2]:
 # --- Hub -> presentation ------------------------------------------------------------------------
 
 func _on_notice_shown(notice: Notice) -> void:
-	var effect: StringName = &""
-	if notice.priority >= Notice.Priority.URGENT:
-		effect = &"jump"
-	elif notice.priority >= Notice.Priority.NORMAL:
-		effect = &"hop"
-	_brain.react(notice.mood_state(), 0.0, effect)
+	_brain.react()
 	if SHOW_ACCESSORIES and notice.source != null and notice.source.key != SourceRegistry.SYSTEM_KEY:
 		_actor.show_accessory(notice.source)
 	_bubble.show_notice(notice)

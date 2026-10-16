@@ -29,9 +29,6 @@ var auth_token: String = ""
 ## Overlay size in UI pixels: the strip's height, and the corner window's width.
 var strip_height: int = 420
 var corner_width: int = 480
-## In strip mode the character only roams this far in from the right edge, so it stays near
-## where you look instead of wandering across an ultrawide monitor.
-var wander_width: int = 900
 ## Keeps the character this far from the window edge so it does not hide under screen corners.
 var edge_margin: int = 16
 
@@ -44,7 +41,7 @@ var _stored: Dictionary = {}
 var screenshot_path: String = ""
 var screenshot_delay: float = 4.0
 var screenshot_history: bool = false
-## `--preview=alert` holds one animation (any state the pack maps) instead of running normally.
+## `--preview=attention` holds one animation (a state or break the pack maps) instead of running normally.
 var preview: String = ""
 ## `--screenshot-frames=N --screenshot-interval=S` saves N shots (path_00.png ...) to inspect an animation.
 var screenshot_count: int = 1

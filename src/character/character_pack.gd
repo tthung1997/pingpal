@@ -3,65 +3,30 @@ extends RefCounted
 ## A swappable character: a sprite sheet plus a JSON manifest that maps semantic states to
 ## animations on the sheet.
 ##
-## The states are species-neutral, so a pet, a person or a robot can all be packs:
-##   idle      resting presence; also shown for plain messages
-##   sleep     resting after a long quiet
-##   thinking  a source is working
-##   happy     success (done, happy mood, being picked up)
-##   alert     needs your attention
-##   sad       failure (error)
-##   walk      optional: only for packs that wander
+## A character only ever plays three kinds of animation:
+##   idle       the main loop; shown whenever nothing else is going on
+##   breaks     short, optional variations (a nap, a stretch, ...) the brain drops in at random
+##              while idle; listed in `behavior.breaks`
+##   attention  one neutral "look at me" animation for every new message, good news or bad
 ##
-## The rest of the app only ever asks for a semantic state (`resolve(&"happy")`), so a pack that
-## lacks an animation degrades gracefully through FALLBACKS instead of breaking.
-##
-## A pack's `kind` sets its default personality:
-##   "pet"    wanders the strip and naps when idle (needs a `walk` animation).
-##   "avatar" stays put and emotes; it never walks unless the manifest opts in.
+## The rest of the app only ever asks for a semantic state (`resolve(&"attention")`); a pack
+## without a mapping for a state degrades to `idle` instead of breaking.
 
-enum Kind { PET, AVATAR }
-
-const SCHEMA_VERSION: int = 1
+const SCHEMA_VERSION: int = 2
 const MANIFEST_NAME: String = "pack.json"
 const PACK_ROOTS: Array[String] = ["res://packs", "user://packs"]
 
-## Every pack must animate these. `walk` is only required when the pack wanders.
-const REQUIRED_STATES: Array[StringName] = [&"idle", &"sleep", &"thinking", &"happy", &"alert", &"sad"]
-
-## Tried in order when a pack does not define the requested state. `idle` is the universal floor.
-const FALLBACKS: Dictionary = {
-	&"excited": [&"happy", &"idle"],
-	&"error": [&"sad", &"alert", &"idle"],
-	&"sleepy": [&"sleep", &"idle"],
-	&"neutral": [&"idle"],
-	&"walk": [&"idle"],
-	&"sleep": [&"idle"],
-	&"happy": [&"idle"],
-	&"alert": [&"idle"],
-	&"thinking": [&"idle"],
-	&"sad": [&"idle"],
-}
+## Every pack must animate these.
+const REQUIRED_STATES: Array[StringName] = [&"idle", &"attention"]
 
 const DEFAULT_BEHAVIOR: Dictionary = {
-	Kind.PET: {
-		"wander": true,
-		"speed": 22.0,
-		"idle_seconds": [2.0, 6.0],
-		"sleep_after_seconds": 45.0,
-		"weights": {"idle": 3.0, "wander": 5.0, "sleep": 2.0},
-	},
-	Kind.AVATAR: {
-		"wander": false,
-		"speed": 0.0,
-		"idle_seconds": [3.0, 8.0],
-		"sleep_after_seconds": 90.0,
-		"weights": {"idle": 6.0, "wander": 0.0, "sleep": 1.0},
-	},
+	"idle_seconds": [6.0, 14.0],
+	"break_seconds": [3.0, 6.0],
+	"breaks": [],
 }
 
 var id: String = ""
 var display_name: String = ""
-var kind: Kind = Kind.PET
 var root_dir: String = ""
 var frame_size: Vector2i = Vector2i(32, 32)
 ## Where the character's feet touch the ground, in frame pixels.
@@ -91,32 +56,31 @@ func used_rect(animation: StringName, index: int) -> Rect2i:
 	return Rect2i(Vector2i.ZERO, frame_size)
 
 
-func wanders() -> bool:
-	return bool(behavior.get("wander", false))
+## The break animations (semantic states) the brain may play while idle.
+func breaks() -> Array[StringName]:
+	var result: Array[StringName] = []
+	for item: Variant in behavior.get("breaks", []):
+		result.append(StringName(str(item)))
+	return result
 
 
 func has_animation(animation: StringName) -> bool:
 	return frames != null and frames.has_animation(animation)
 
 
-## Maps a semantic state to a concrete animation name, following the pack's own mapping and then
-## FALLBACKS. Returns an empty name only when the pack has no usable animation at all.
+## Maps a semantic state to a concrete animation name: the pack's own mapping first, then an
+## animation of that very name, then `idle`. Returns an empty name only when the pack has no
+## usable animation at all.
 func resolve(state: StringName) -> StringName:
-	var seen: Dictionary = {}
-	var queue: Array[StringName] = [state]
-	while not queue.is_empty():
-		var current: StringName = queue.pop_front()
-		if seen.has(current):
-			continue
-		seen[current] = true
-		for candidate: StringName in _states.get(current, []):
-			if has_animation(candidate):
-				return candidate
-		if has_animation(current):
-			return current
-		for next: StringName in FALLBACKS.get(current, [&"idle"]):
-			queue.append(next)
-	return &""
+	for candidate: StringName in _states.get(state, []):
+		if has_animation(candidate):
+			return candidate
+	if has_animation(state):
+		return state
+	for candidate: StringName in _states.get(&"idle", [&"idle"]):
+		if has_animation(candidate):
+			return candidate
+	return &"idle" if has_animation(&"idle") else &""
 
 
 ## Lists packs found in the bundled and user pack folders (id -> directory). User packs
@@ -180,7 +144,6 @@ func configure(manifest: Dictionary, sheet: Texture2D) -> void:
 		errors.append("manifest needs a simple string `id`")
 		return
 	display_name = str(manifest.get("name", id))
-	kind = Kind.AVATAR if str(manifest.get("kind", "pet")) == "avatar" else Kind.PET
 	frame_size = _vec2i(manifest.get("frame_size", [32, 32]), Vector2i(32, 32))
 	anchor = Vector2(_vec2i(manifest.get("anchor", [frame_size.x / 2, frame_size.y - 2]), Vector2i(16, 30)))
 	head = Vector2(_vec2i(manifest.get("head", [frame_size.x / 2, 6]), Vector2i(16, 6)))
@@ -205,8 +168,10 @@ func configure(manifest: Dictionary, sheet: Texture2D) -> void:
 	for state: StringName in REQUIRED_STATES:
 		if not _states.has(state) and not has_animation(state):
 			errors.append("required state `%s` is not mapped to an animation" % state)
-	if wanders() and resolve(&"walk") == resolve(&"idle"):
-		errors.append("a pack that wanders needs a `walk` animation (or set behavior.wander to false)")
+	if errors.is_empty():
+		for state: StringName in breaks():
+			if state == &"idle" or state == &"attention" or resolve(state) == resolve(&"idle"):
+				errors.append("break `%s` is not mapped to a distinct animation" % state)
 	for state: StringName in _states:
 		for candidate: StringName in _states[state]:
 			if not has_animation(candidate):
@@ -244,16 +209,10 @@ func _add_animation(anim_name: StringName, spec: Variant, sheet: Texture2D) -> v
 
 
 func _merge_behavior(overrides: Variant) -> Dictionary:
-	var merged: Dictionary = (DEFAULT_BEHAVIOR[kind] as Dictionary).duplicate(true)
+	var merged: Dictionary = DEFAULT_BEHAVIOR.duplicate(true)
 	if overrides is Dictionary:
 		for key: Variant in overrides:
-			if key == "weights" and overrides[key] is Dictionary:
-				for weight_key: Variant in overrides[key]:
-					merged["weights"][weight_key] = float(overrides[key][weight_key])
-			else:
-				merged[key] = overrides[key]
-	if not bool(merged.get("wander", false)):
-		merged["weights"]["wander"] = 0.0
+			merged[key] = overrides[key]
 	return merged
 
 

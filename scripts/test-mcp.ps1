@@ -63,9 +63,11 @@ Check ($names -eq "ask,clear,notify,set_state") "tools/list -> $names"
 
 $r = Invoke-Tool "set_state" @{ status = "working"; text = "running the test script" } 3
 Check (-not $r.isError) "set_state working"
-$r = Invoke-Tool "notify" @{ text = "Hello from the smoke test!"; mood = "happy" } 4
+$r = Invoke-Tool "notify" @{ text = "Hello from the smoke test!" } 4
 Check (-not $r.isError) "notify: $($r.content[0].text)"
-$r = Invoke-Tool "notify" @{ text = "bad mood"; mood = "furious" } 6
+Write-Host "  ...   watch the character: it should show its attention animation while the bubble is up"
+Start-Sleep -Seconds 5
+$r = Invoke-Tool "notify" @{ text = "bad priority"; priority = "whenever" } 6
 Check ($r.isError -eq $true) "invalid arguments come back as isError: $($r.content[0].text)"
 
 if (-not $SkipAsk) {
