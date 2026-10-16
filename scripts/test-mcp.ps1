@@ -4,12 +4,11 @@
 
 .EXAMPLE
   ./scripts/test-mcp.ps1
-  ./scripts/test-mcp.ps1 -Port 9000 -Token secret -SkipAsk
+  ./scripts/test-mcp.ps1 -Port 9000 -Token secret
 #>
 param(
   [int]$Port = 7464,
-  [string]$Token = "",
-  [switch]$SkipAsk   # `ask` waits for a click (or its timeout); skip it for fast runs
+  [string]$Token = ""
 )
 
 $ErrorActionPreference = "Stop"
@@ -59,27 +58,22 @@ Check ($note.StatusCode -eq 202) "notifications/initialized -> 202 Accepted"
 
 $list = (Invoke-Mcp @{ jsonrpc = "2.0"; id = 2; method = "tools/list" }).Content | ConvertFrom-Json
 $names = ($list.result.tools | ForEach-Object { $_.name } | Sort-Object) -join ","
-Check ($names -eq "ask,clear,notify,set_state") "tools/list -> $names"
+Check ($names -eq "clear,notify,set_state") "tools/list -> $names"
 
-$r = Invoke-Tool "set_state" @{ status = "working"; text = "running the test script" } 3
+$r = Invoke-Tool "set_state" @{ source = "Smoke Test"; status = "working"; text = "running the test script" } 3
 Check (-not $r.isError) "set_state working"
-$r = Invoke-Tool "notify" @{ text = "Hello from the smoke test!" } 4
+$r = Invoke-Tool "notify" @{ source = "Smoke Test"; text = "Hello from the smoke test!" } 4
 Check (-not $r.isError) "notify: $($r.content[0].text)"
 Write-Host "  ...   watch the character: it should show its attention animation while the bubble is up"
 Start-Sleep -Seconds 5
-$r = Invoke-Tool "notify" @{ text = "bad priority"; priority = "whenever" } 6
+$r = Invoke-Tool "notify" @{ source = "Smoke Test"; text = "bad priority"; priority = "whenever" } 6
 Check ($r.isError -eq $true) "invalid arguments come back as isError: $($r.content[0].text)"
+$r = Invoke-Tool "notify" @{ text = "no source" } 5
+Check ($r.isError -eq $true) "a call without source is rejected: $($r.content[0].text)"
 
-if (-not $SkipAsk) {
-  Write-Host "  ...   ask: click a button on the character within 8s (or let it time out)"
-  $r = Invoke-Tool "ask" @{ question = "Does the smoke test look good?"; choices = @("Yes", "No"); timeout_seconds = 8 } 7 20
-  $answer = $r.content[0].text | ConvertFrom-Json
-  Check (-not $r.isError) "ask returned: $($r.content[0].text)"
-}
-
-$r = Invoke-Tool "set_state" @{ status = "done"; text = "Smoke test finished" } 8
+$r = Invoke-Tool "set_state" @{ source = "Smoke Test"; status = "done"; text = "Smoke test finished" } 8
 Check (-not $r.isError) "set_state done"
-$r = Invoke-Tool "clear" @{} 9
+$r = Invoke-Tool "clear" @{ source = "Smoke Test" } 9
 Check (-not $r.isError) "clear"
 
 Invoke-WebRequest -Uri "$base/mcp" -Method Delete -Headers @{ "Mcp-Session-Id" = $script:session } -UseBasicParsing | Out-Null

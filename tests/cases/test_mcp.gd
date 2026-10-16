@@ -42,7 +42,7 @@ func test_initialize_negotiates_and_creates_session() -> void:
 	eq((await protocol.handle_payload(old, {}))["result"]["protocolVersion"], McpProtocol.LATEST_VERSION, "unknown version -> latest")
 
 
-func test_tools_list_has_the_four_tools_with_schemas() -> void:
+func test_tools_list_has_the_three_tools_with_schemas() -> void:
 	var reply: Dictionary = await _protocol().handle_payload(_rpc(2, "tools/list"), {})
 	var names: Array = []
 	for tool_def: Dictionary in reply["result"]["tools"]:
@@ -50,7 +50,7 @@ func test_tools_list_has_the_four_tools_with_schemas() -> void:
 		eq(tool_def["inputSchema"]["type"], "object", "%s has an object schema" % tool_def["name"])
 		check(not str(tool_def["description"]).is_empty(), "%s has a description" % tool_def["name"])
 	names.sort()
-	eq(names, ["ask", "clear", "notify", "set_state"], "exactly the agreed tools")
+	eq(names, ["clear", "notify", "set_state"], "exactly the agreed tools")
 	check(JSON.stringify(reply) != "", "the list is JSON-serializable")
 
 
@@ -62,33 +62,98 @@ func test_tool_calls_drive_the_hub() -> void:
 	ctx = {"session_id": ctx["new_session_id"]}
 
 	var reply: Dictionary = await protocol.handle_payload(
-		_rpc(3, "tools/call", {"name": "notify", "arguments": {"text": "hi there"}}), ctx)
+		_rpc(3, "tools/call", {"name": "notify", "arguments": {"source": "Claude Code · api", "text": "hi there"}}), ctx)
 	eq(reply["result"]["isError"], false, "notify succeeds")
-	eq(hub.history[0].source.display_name, "Claude Code", "source comes from the session's client name")
+	eq(hub.history[0].source.display_name, "Claude Code · api", "the caller's source names who spoke")
 
 	reply = await protocol.handle_payload(
-		_rpc(4, "tools/call", {"name": "notify", "arguments": {"text": "x", "source": "Codex"}}), ctx)
-	eq(hub.history[1].source.display_name, "Codex", "an explicit source wins")
+		_rpc(4, "tools/call", {"name": "notify", "arguments": {"source": "Codex", "text": "x"}}), ctx)
+	eq(hub.history[1].source.display_name, "Codex", "another source is a separate entry")
 
 	reply = await protocol.handle_payload(
-		_rpc(5, "tools/call", {"name": "set_state", "arguments": {"status": "working"}}), ctx)
+		_rpc(5, "tools/call", {"name": "set_state", "arguments": {"source": "Codex", "status": "working"}}), ctx)
 	eq(JSON.parse_string(_text(reply["result"]))["status"], "working", "set_state reports the new status")
 	eq(hub.active_sources().size(), 1, "the caller shows in the tray")
 
-	reply = await protocol.handle_payload(_rpc(7, "tools/call", {"name": "clear", "arguments": {}}), ctx)
+	reply = await protocol.handle_payload(
+		_rpc(7, "tools/call", {"name": "clear", "arguments": {"source": "Codex"}}), ctx)
 	eq(reply["result"]["isError"], false, "clear succeeds")
 	eq(hub.active_sources().size(), 0, "clear removed the caller's state")
+
+
+func test_source_is_required_on_every_tool() -> void:
+	var hub: NotificationManager = NotificationManager.new()
+	var protocol: McpProtocol = McpProtocol.new(McpTools.new(hub))
+	var valid: Array[Dictionary] = [
+		{"name": "notify", "arguments": {"text": "x"}},
+		{"name": "set_state", "arguments": {"status": "working"}},
+		{"name": "clear", "arguments": {}},
+	]
+	for params: Dictionary in valid:
+		var reply: Dictionary = await protocol.handle_payload(_rpc(1, "tools/call", params), {})
+		check(reply["result"]["isError"] == true, "%s without source is rejected" % params["name"])
+		check(_text(reply["result"]).contains("source"), "%s: the error names the missing argument" % params["name"])
+		params["arguments"]["source"] = "   "
+		reply = await protocol.handle_payload(_rpc(1, "tools/call", params), {})
+		check(reply["result"]["isError"] == true, "%s with a blank source is rejected" % params["name"])
+	eq(hub.history.size(), 0, "nothing reached the hub")
+	eq(hub.active_sources().size(), 0, "and no source was created")
+
+
+func test_clear_only_touches_the_named_source_even_if_asked_for_more() -> void:
+	var hub: NotificationManager = NotificationManager.new()
+	var protocol: McpProtocol = McpProtocol.new(McpTools.new(hub))
+	hub.set_state("Session A", &"working")
+	hub.set_state("Session B", &"working")
+	var tool_def: Dictionary = {}
+	for definition: Dictionary in McpTools.new(hub).definitions():
+		if definition["name"] == "clear":
+			tool_def = definition
+	check(not (tool_def["inputSchema"]["properties"] as Dictionary).has("all"), "the clear tool has no `all` option")
+	var reply: Dictionary = await protocol.handle_payload(_rpc(1, "tools/call",
+		{"name": "clear", "arguments": {"source": "Session A", "all": true}}), {})
+	eq(reply["result"]["isError"], false, "an old client that still sends all=true is not rejected")
+	eq(hub.active_sources().size(), 1, "but only its own status was cleared")
+	eq(hub.active_sources()[0].display_name, "Session B", "the other session is untouched")
+
+
+func test_the_agent_skill_matches_the_real_tools_and_limits() -> void:
+	var skill: String = FileAccess.get_file_as_string("res://skills/pingpal/SKILL.md").replace("\r\n", "\n")
+	var guide: String = FileAccess.get_file_as_string("res://docs/AGENT_INSTRUCTIONS.md").replace("\r\n", "\n")
+	check(skill.begins_with("---\nname: pingpal\ndescription: "), "the skill has the standard frontmatter")
+	var close: int = skill.find("\n---\n", 4)
+	check(close > 0, "and the frontmatter is closed")
+	var description: String = skill.substr(0, close) if close > 0 else ""
+	check(description.length() > 100, "with a description that says when to use it")
+
+	var tools: Array[String] = []
+	for definition: Dictionary in McpTools.new(NotificationManager.new()).definitions():
+		tools.append(definition["name"])
+	for tool_name: String in tools:
+		check(skill.contains("`%s`" % tool_name) or skill.contains("%s(" % tool_name), "the skill covers %s" % tool_name)
+		check(guide.contains("`%s`" % tool_name), "so does the install guide")
+	for status: String in McpTools.STATUSES:
+		check(skill.contains("\"%s\"" % status) or skill.contains("`%s`" % status), "the skill covers status %s" % status)
+	for text: String in [skill, guide]:
+		check(not text.contains("ask("), "neither mentions the removed ask tool")
+		check(not text.contains("`ask`"), "in any form")
+
+	check(skill.contains("%d characters" % SourceRegistry.MAX_NAME_LENGTH), "the source length limit is current")
+	check(skill.contains("limit is %d" % NotificationManager.MAX_TEXT_LENGTH), "so is the text length limit")
+	var stale_minutes: int = int(NotificationManager.WORKING_STALE_SECONDS / 60.0)
+	check(skill.contains("%d minutes" % stale_minutes), "and the working timeout (%d minutes)" % stale_minutes)
 
 
 func test_bad_arguments_are_tool_errors_not_protocol_errors() -> void:
 	var protocol: McpProtocol = _protocol()
 	var cases: Array[Dictionary] = [
-		{"name": "notify", "arguments": {}},
-		{"name": "notify", "arguments": {"text": 5}},
-		{"name": "set_state", "arguments": {"status": "napping"}},
-		{"name": "ask", "arguments": {"question": "q", "choices": ["only one"]}},
-		{"name": "notify", "arguments": {"text": "x", "priority": "whenever"}},
-		{"name": "perform", "arguments": {"action": "wave"}},
+		{"name": "notify", "arguments": {"source": "T"}},
+		{"name": "notify", "arguments": {"source": "T", "text": 5}},
+		{"name": "set_state", "arguments": {"source": "T", "status": "napping"}},
+		{"name": "ask", "arguments": {"source": "T", "question": "q"}},
+		{"name": "notify", "arguments": {"source": "T", "text": "x", "priority": "whenever"}},
+		{"name": "notify", "arguments": {"source": "x".repeat(81), "text": "x"}},
+		{"name": "perform", "arguments": {"source": "T", "action": "wave"}},
 		{"name": "nope", "arguments": {}},
 	]
 	for params: Dictionary in cases:
@@ -202,14 +267,14 @@ func test_http_handshake_and_tool_call() -> void:
 	eq(note["status"], 202, "notification -> 202 Accepted")
 
 	var list: Dictionary = await _send(port, _raw_post('{"jsonrpc":"2.0","id":2,"method":"tools/list"}', {"Mcp-Session-Id": session}))
-	eq(JSON.parse_string(list["body"])["result"]["tools"].size(), 4, "tools/list over HTTP")
+	eq(JSON.parse_string(list["body"])["result"]["tools"].size(), 3, "tools/list over HTTP")
 
 	var call: Dictionary = await _send(port, _raw_post(JSON.stringify(_rpc(3, "tools/call",
-		{"name": "notify", "arguments": {"text": "over the wire"}})), {"Mcp-Session-Id": session}))
+		{"name": "notify", "arguments": {"source": "Wire Test", "text": "over the wire"}})), {"Mcp-Session-Id": session}))
 	eq(call["status"], 200, "tools/call -> 200")
 	eq(JSON.parse_string(call["body"])["result"]["isError"], false, "tool succeeded")
 	eq(hub.history.size(), 1, "the hub got the notice")
-	eq(hub.history[0].source.display_name, "Claude Code", "attributed to the session's client")
+	eq(hub.history[0].source.display_name, "Wire Test", "attributed to the source the caller named")
 	_stop(env)
 
 
@@ -270,36 +335,13 @@ func test_http_bearer_token() -> void:
 	_stop(env)
 
 
-func test_http_ask_blocks_until_the_human_answers() -> void:
+func test_the_retired_ask_tool_is_gone_and_never_blocks() -> void:
 	var env: Dictionary = _start()
-	var hub: NotificationManager = env["hub"]
-	var peer: StreamPeerTCP = await _connect(env["port"])
-	var call: Dictionary = _rpc(1, "tools/call", {"name": "ask", "arguments": {"source": "Claude", "question": "Deploy?", "choices": ["Ship", "Wait"]}})
-	peer.put_data(_raw_post(JSON.stringify(call)).to_utf8_buffer())
-	await wait_frames(10)
-	eq(hub.pending_asks().size(), 1, "the question reached the screen")
-	# Meanwhile other clients are still served.
-	eq((await _send(env["port"], _raw_post('{"jsonrpc":"2.0","id":2,"method":"ping"}')))["status"], 200, "server stays responsive while a question is open")
-	hub.answer_ask(hub.pending_asks()[0].id, 0)
-	var response: Dictionary = await _read_response(peer)
-	eq(response["status"], 200, "the held request completes")
-	var result: Dictionary = JSON.parse_string(JSON.parse_string(response["body"])["result"]["content"][0]["text"])
-	eq(result["choice"], "Ship", "with the human's choice")
-	peer.disconnect_from_host()
-	_stop(env)
-
-
-func test_http_ask_is_withdrawn_when_the_client_hangs_up() -> void:
-	var env: Dictionary = _start()
-	var hub: NotificationManager = env["hub"]
-	var server: McpHttpServer = env["server"]
-	server.connection_closed.connect(hub.cancel_asks_owned_by)
-	var peer: StreamPeerTCP = await _connect(env["port"])
-	var call: Dictionary = _rpc(1, "tools/call", {"name": "ask", "arguments": {"question": "Deploy?"}})
-	peer.put_data(_raw_post(JSON.stringify(call)).to_utf8_buffer())
-	await wait_frames(10)
-	eq(hub.pending_asks().size(), 1, "question is up")
-	peer.disconnect_from_host()
-	await wait_frames(20)
-	eq(hub.pending_asks().size(), 0, "hanging up withdraws it")
+	var call: Dictionary = _rpc(1, "tools/call", {"name": "ask", "arguments": {"source": "Claude", "question": "Deploy?"}})
+	var response: Dictionary = await _send(env["port"], _raw_post(JSON.stringify(call)))
+	eq(response["status"], 200, "an old client calling ask gets an answer straight away")
+	var result: Dictionary = JSON.parse_string(response["body"])["result"]
+	eq(result["isError"], true, "which says the tool does not exist")
+	check(str(result["content"][0]["text"]).contains("Unknown tool"), "with a readable reason")
+	eq(env["hub"].history.size(), 0, "and nothing reaches the screen")
 	_stop(env)

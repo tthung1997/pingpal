@@ -31,8 +31,6 @@ var root_dir: String = ""
 var frame_size: Vector2i = Vector2i(32, 32)
 ## Where the character's feet touch the ground, in frame pixels.
 var anchor: Vector2 = Vector2(16, 30)
-## Where accessories sit, in frame pixels.
-var head: Vector2 = Vector2(16, 6)
 var behavior: Dictionary = {}
 var frames: SpriteFrames = null
 var errors: PackedStringArray = PackedStringArray()
@@ -146,7 +144,6 @@ func configure(manifest: Dictionary, sheet: Texture2D) -> void:
 	display_name = str(manifest.get("name", id))
 	frame_size = _vec2i(manifest.get("frame_size", [32, 32]), Vector2i(32, 32))
 	anchor = Vector2(_vec2i(manifest.get("anchor", [frame_size.x / 2, frame_size.y - 2]), Vector2i(16, 30)))
-	head = Vector2(_vec2i(manifest.get("head", [frame_size.x / 2, 6]), Vector2i(16, 6)))
 	behavior = _merge_behavior(manifest.get("behavior", {}))
 	frames = SpriteFrames.new()
 	frames.remove_animation(&"default")

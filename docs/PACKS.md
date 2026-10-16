@@ -12,11 +12,11 @@ Every character plays exactly three kinds of animation, so a pet, a person or a 
 | Kind | Required | When it plays | Design notes |
 | --- | --- | --- | --- |
 | `idle` | yes | Whenever nothing else happens, and while the user drags the character | Loops forever. Calm and low-key: it is on screen almost all the time. |
-| `attention` | yes | Every new message, held until its bubble goes away (a few seconds, longer for questions) | **Neutral.** Never happy or sad: the app does not judge whether the news is good or bad. Must loop smoothly. |
+| `attention` | yes | Whenever a message is waiting, **until the user checks it** (clicks the bubble or the character), which can be minutes | **Neutral.** Never happy or sad: the app does not judge whether the news is good or bad. Must loop smoothly, and stay calm enough to bear for a long time: no flashing, no big motion. |
 | breaks | no, but bundled packs need at least one | One random break, 3-6 s, after each 6-14 s of idle; never the same one twice in a row | Short variations (nap, stretch, snack). Each break loops several times, so frame 4 must flow into frame 1. |
 
-A message interrupts anything, including a break. Back-to-idle always follows, so every animation
-must start and end on a pose close to idle.
+A message interrupts anything, including a break, and attention stays until the user checks the
+message. Back-to-idle always follows, so every animation must start and end on a pose close to idle.
 
 Design rules that make a pack feel good:
 
@@ -53,7 +53,6 @@ and the PNG is read directly, so no editor or import step is needed.
   "sheet": "sheet.png",
   "frame_size": [89, 131],
   "anchor": [44, 129],
-  "head": [41, 44],
   "behavior": { "idle_seconds": [6.0, 14.0], "break_seconds": [3.0, 6.0], "breaks": ["bone", "sleep"] },
   "animations": {
     "idle":      { "row": 0, "frames": 4, "fps": 6, "loop": true },
@@ -88,8 +87,6 @@ idle, and a state pointing at a missing animation.
 - **`anchor`** is where the character's feet touch the ground, in cell pixels. Keep its x near the
   horizontal centre: the character is flipped around it (see below) and the drag limits use half the
   cell width.
-- **`head`** is where accessories would sit. Accessories are currently switched off in the app, but
-  set it to the top of the head anyway.
 - **Hit area:** the clickable region follows the visible pixels of the *current frame*, so empty
   space in a large cell never blocks clicks on windows behind it. Do not add faint or stray pixels
   far from the character: they enlarge the clickable (and drawn) area.

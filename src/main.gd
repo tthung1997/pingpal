@@ -7,9 +7,6 @@ extends Node
 ##   PingHub signals -> Main -> CharacterBrain / SpeechBubble / StatusTray / HistoryPanel
 
 const GROUND_MARGIN: float = 6.0
-## Per-source hats/antennas on the character while its bubble is up. Off until they are redrawn
-## to match the pixel art; the source colour still shows on the bubble and tray chips.
-const SHOW_ACCESSORIES: bool = false
 const STACK_GAP: float = 4.0
 ## The character starts this far in from the right edge, where you are likely looking.
 const START_INSET: float = 260.0
@@ -23,6 +20,7 @@ var _tray: StatusTray
 var _bubble: SpeechBubble
 var _history: HistoryPanel
 var _menu: ContextMenu
+var _confirm: ConfirmCard
 var _server: McpHttpServer
 
 var _world: Vector2 = Vector2(640, 420)
@@ -106,22 +104,25 @@ func _build_scene() -> void:
 
 	_bubble = SpeechBubble.new()
 	_bubble.dismissed.connect(PingHub.dismiss_current)
-	_bubble.choice_picked.connect(_on_choice_picked)
 	_stage.add_child(_bubble)
 
 	_history = HistoryPanel.new(PingHub)
 	_history.closed.connect(_close_history)
-	_history.choice_picked.connect(_on_choice_picked)
 	_stage.add_child(_history)
 
 	_menu = ContextMenu.new()
 	_menu.item_chosen.connect(_on_menu_item)
 	_stage.add_child(_menu)
 
+	_confirm = ConfirmCard.new()
+	_confirm.confirmed.connect(_clear_everything)
+	_stage.add_child(_confirm)
+
 
 func _connect_hub() -> void:
 	PingHub.notice_shown.connect(_on_notice_shown)
 	PingHub.notice_hidden.connect(_on_notice_hidden)
+	PingHub.read_state_changed.connect(_sync_attention)
 	PingHub.source_changed.connect(_on_source_changed)
 	PingHub.history_changed.connect(_refresh_history)
 
@@ -131,7 +132,6 @@ func _start_server() -> void:
 	_server.protocol = McpProtocol.new(McpTools.new(PingHub))
 	_server.auth_token = PingConfig.auth_token
 	add_child(_server)
-	_server.connection_closed.connect(PingHub.cancel_asks_owned_by)
 	var err: Error = _server.start(PingConfig.port)
 	if err != OK:
 		var message: String = "Can't listen on port %d (%s). Is PingPal already running?" % [PingConfig.port, error_string(err)]
@@ -227,32 +227,40 @@ func _clickable_rects() -> Array[Rect2]:
 		rects.append(Rect2(center_x - 12.0, card.end.y, 24.0, maxf(hit.position.y - card.end.y, 1.0)))
 	if _menu.visible:
 		rects.append(_menu.gui_rect())
+	if _confirm.visible:
+		rects.append(_confirm.gui_rect())
 	return rects
 
 
 # --- Hub -> presentation ------------------------------------------------------------------------
 
 func _on_notice_shown(notice: Notice) -> void:
-	_brain.react()
-	if SHOW_ACCESSORIES and notice.source != null and notice.source.key != SourceRegistry.SYSTEM_KEY:
-		_actor.show_accessory(notice.source)
+	if _history.visible:
+		# The history is open, so the user is already reading it.
+		PingHub.mark_read(notice)
+	_sync_attention()
 	_bubble.show_notice(notice)
 
 
 func _on_notice_hidden(_notice: Notice) -> void:
-	if PingConfig.preview.is_empty():
-		_brain.release()
-	_actor.hide_accessory()
 	_bubble.hide_bubble()
+	_sync_attention()
+
+
+## The character keeps its attention animation for as long as there is something the user has not
+## checked yet, not just while a bubble is up, so a message that times out is never missed.
+func _sync_attention() -> void:
+	if _brain == null or not PingConfig.preview.is_empty():
+		return
+	if PingHub.needs_attention():
+		if _brain.mode != CharacterBrain.Mode.HELD:
+			_brain.react()
+	else:
+		_brain.release()
 
 
 func _on_source_changed(_source: SourceInfo) -> void:
 	_tray.show_sources(PingHub.active_sources())
-	_refresh_history()
-
-
-func _on_choice_picked(ask_id: int, index: int) -> void:
-	PingHub.answer_ask(ask_id, index)
 	_refresh_history()
 
 
@@ -269,6 +277,7 @@ func _on_hitbox_input(event: InputEvent) -> void:
 			else:
 				if _dragging:
 					_brain.drop()
+					_sync_attention()
 				elif _pressed:
 					_on_character_clicked()
 				_pressed = false
@@ -286,8 +295,6 @@ func _on_hitbox_input(event: InputEvent) -> void:
 func _on_character_clicked() -> void:
 	if _history.visible:
 		_close_history()
-	elif PingHub.current == null and not PingHub.pending_asks().is_empty():
-		PingHub.reopen_asks()
 	else:
 		_open_history()
 
@@ -341,8 +348,17 @@ func _on_menu_item(id: StringName) -> void:
 		&"history":
 			_open_history()
 		&"clear":
-			PingHub.clear()
+			# Where the menu was, so the question appears under the pointer that just chose it.
+			var corner: Vector2 = Vector2(_menu.position.x, _menu.position.y + _menu.size.y)
+			_confirm.ask("Clear all messages and history?\nThis can't be undone.", "Clear everything", corner)
+			_confirm.position.x = _clamp_x(corner.x, _confirm.size.x)
 		&"screen":
 			_overlay.move_to_next_screen()
 		&"quit":
 			get_tree().quit()
+
+
+## Everything the user can see: bubble, queue, tray chips, and the history.
+func _clear_everything() -> void:
+	PingHub.clear()
+	PingHub.clear_history()

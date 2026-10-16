@@ -1,7 +1,8 @@
 class_name SourceInfo
 extends RefCounted
-## One AI client/agent that talks to PingPal, with its look (color, glyph, accessory) and its
-## current status. Looks are stable per source so the user learns "orange hat = Claude".
+## One AI client/agent that talks to PingPal, with its look (color, glyph) and its current status.
+## The look is derived from the source's name, so the same name always looks the same and a
+## session picks its own look by choosing its name.
 
 enum Status { IDLE, WORKING, DONE, NEEDS_INPUT, ERROR }
 
@@ -15,16 +16,12 @@ const STATUS_NAMES: Dictionary = {
 
 var key: String = ""
 var display_name: String = ""
-## Shared by related sources (every "Claude Code · repo" is family "claude") so they share a color.
-var family: String = ""
 var color: Color = Color.WHITE
 var glyph: String = "?"
-var accessory: StringName = &"cap"
 
 var status: Status = Status.IDLE
 var status_text: String = ""
-## Manager clock time (seconds) of the last status change and of the last message of any kind.
-var status_since: float = 0.0
+## Manager clock time (seconds) of the last call of any kind from this source.
 var last_seen: float = 0.0
 var notice_count: int = 0
 

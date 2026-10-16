@@ -10,7 +10,6 @@ var brain: CharacterBrain
 var floor_y: float = 0.0
 
 var _sprite: AnimatedSprite2D
-var _accessory: Accessory
 var _animation: StringName = &""
 
 
@@ -24,10 +23,6 @@ func setup(p_pack: CharacterPack, p_brain: CharacterBrain, pixel_scale: int) -> 
 	_sprite.centered = false
 	_sprite.offset = -pack.anchor
 	add_child(_sprite)
-	_accessory = Accessory.new()
-	_accessory.position = pack.head - pack.anchor
-	_accessory.visible = false
-	add_child(_accessory)
 	_play(brain.anim_state)
 
 
@@ -36,17 +31,8 @@ func set_pack(p_pack: CharacterPack) -> void:
 	pack = p_pack
 	_sprite.sprite_frames = pack.frames
 	_sprite.offset = -pack.anchor
-	_accessory.position = pack.head - pack.anchor
 	_animation = &""
 	_play(brain.anim_state)
-
-
-func show_accessory(source: SourceInfo) -> void:
-	_accessory.show_for(source)
-
-
-func hide_accessory() -> void:
-	_accessory.visible = false
 
 
 func _process(delta: float) -> void:
@@ -71,11 +57,6 @@ func hit_rect() -> Rect2:
 	var bottom: float = used.end.y - pack.anchor.y
 	var local: Rect2 = Rect2(left, top, right - left, bottom - top)
 	return Rect2(position + local.position * scale, local.size * scale)
-
-
-## Top of the head in the parent's coordinates.
-func head_point() -> Vector2:
-	return position + (pack.head - pack.anchor) * scale
 
 
 func _play(state: StringName) -> void:

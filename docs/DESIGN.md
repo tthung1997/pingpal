@@ -13,7 +13,7 @@ Principles
    batching and attention-grabbing are the app's job, so ten chatty agents cannot make the screen
    unusable.
 2. **Nothing is lost.** Bubbles time out quickly because they are short-lived by design, but every
-   notice lands in a history and every unanswered question stays answerable.
+   notice lands in a history, and the character keeps asking for a look until you have checked.
 3. **Alive when idle.** With no messages the character loops one idle animation and, now and then,
    plays a short random break. A new message always gets the same neutral attention animation:
    the character does not judge whether the news is good or bad.
@@ -56,7 +56,7 @@ Layering follows "signals up, calls down":
 | Transport | `src/mcp/mcp_http_server.gd` | Bytes <-> HTTP requests. Knows nothing about tools. |
 | Protocol | `mcp_protocol.gd`, `mcp_schema.gd` | JSON-RPC, sessions, negotiation, argument validation. No sockets. |
 | Tools | `mcp_tools.gd` | Maps tool calls onto hub methods; tool schemas are the single source of truth. |
-| Rules/state | `src/core/*` | Queue, priority, batching, source status, asks. **No rendering**; time only moves via `advance(dt)`, so it is deterministic in tests. |
+| Rules/state | `src/core/*` | Queue, priority, batching, source status, read state. **No rendering**; time only moves via `advance(dt)`, so it is deterministic in tests. |
 | Character | `src/character/*` | Pack loader, brain (pure logic), actor (sprites/effects). |
 | Presentation | `src/ui/*`, `src/overlay/*`, `src/main.gd` | Listens to the hub; owns no rules. |
 
@@ -98,7 +98,6 @@ sprite sheet. The app asks for **semantic states**, never animation names.
   "sheet": "sheet.png",
   "frame_size": [32, 32],
   "anchor": [16, 30],                // feet, in frame px (the character stands on this point)
-  "head": [16, 6],                   // where accessories sit
   "behavior": {                      // all optional
     "idle_seconds": [6, 14],         // how long the idle loop runs before a break may start
     "break_seconds": [3, 6],         // how long a break lasts
@@ -120,7 +119,7 @@ all be packs:
 | --- | --- | --- |
 | `idle` (required) | the main loop | whenever nothing else is happening; also while being dragged |
 | `breaks` (optional) | short variations: a nap, a stretch, anything | picked at random, for `break_seconds`, after each `idle_seconds` |
-| `attention` (required) | one neutral "look at me" | every new message, for as long as its bubble is up; it never says good or bad |
+| `attention` (required) | one neutral "look at me" | whenever a message is waiting, until the user checks it; it never says good or bad |
 
 Break names are states: each must map (via `states`, or by sharing a name with an animation) to an
 animation other than `idle`. A pack with no breaks simply idles. States the pack does not map
@@ -155,20 +154,28 @@ stateDiagram-v2
   [*] --> IDLE
   IDLE --> BREAK: after idle_seconds, a random break
   BREAK --> IDLE: after break_seconds
-  IDLE --> ATTENTION: new message
-  BREAK --> ATTENTION: new message
-  ATTENTION --> IDLE: release (bubble gone)
+  IDLE --> ATTENTION: message waiting
+  BREAK --> ATTENTION: message waiting
+  ATTENTION --> IDLE: release (everything checked)
   IDLE --> HELD: user drags
   HELD --> IDLE: drop
+  HELD --> ATTENTION: drop while something is unread
 ```
 
 - **Idle** loops indefinitely. Each time it is (re)entered, it runs for a fresh random
   `idle_seconds` before the next break, including after a message or a drag.
 - **Breaks** are picked at random from the pack's `breaks`, never the same one twice in a row when
   there is a choice, and last a random `break_seconds`.
-- Messages **interrupt** whatever is playing: a notice calls `react(effect)`, which shows the
-  `attention` animation until its bubble goes away. Status (`working`, `done`, ...) only drives the
-  tray; it does not change the animation.
+- Messages **interrupt** whatever is playing and show the `attention` animation. It is held for as
+  long as the user has something to check, not just while the bubble is up, so a message that times
+  out is never missed. Status (`working`, `done`, ...) only drives the tray; it does not change the
+  animation.
+- **What counts as checked** (`NotificationManager.needs_attention()`): a notice that was shown stays
+  *unread* until the user clicks its bubble, opens the history (click the character or a tray chip),
+  or its source is cleared. A summary bubble reads every notice folded into it. Queued notices also
+  keep the attention. A message that arrives while the history is open is read at once. `Main`
+  re-evaluates this on `read_state_changed` and releases the character when nothing is left; after a
+  drag it resumes attention if something is still unread.
 - The character stays where it is; the user can drag it along the strip.
 
 ## 6. MCP server
@@ -199,79 +206,81 @@ Behavior and hardening:
 | Methods | `POST` -> JSON-RPC; notifications/responses -> `202`; `GET` -> `405` (no server-initiated stream, permitted by spec); `DELETE` ends a session |
 | Protocol versions | negotiates `2025-06-18`, `2025-03-26`, `2024-11-05`; validates `MCP-Protocol-Version` |
 | Batches | supported |
-| Concurrency | all connections are polled from `_process`; a request that awaits (`ask`) just keeps its connection busy while others are served |
-| Disconnects | if a client hangs up mid-`ask`, the question is withdrawn (`connection_closed` -> `cancel_asks_owned_by`) |
+| Concurrency | all connections are polled from `_process`; every request is answered immediately (there is no tool that waits for the human), so no connection is ever held open |
 
-Sessions: `initialize` returns an `Mcp-Session-Id` and records `clientInfo` (title, else name). The
-client's name becomes the default `source`. **Unknown or missing session ids are tolerated** instead
-of `404`: the app is restarted far more often than a server normally is, and a pure notification
-tool is better off attributing to `source` (or "Unknown") than failing. Strictness can be added
-behind a setting if a client needs it.
+Sessions: `initialize` returns an `Mcp-Session-Id` and records `clientInfo` (title, else name), the
+negotiated protocol version and the client version. The session id is **not** an identity: who is
+speaking is decided by the required `source` argument on every tool call, so **unknown or missing
+session ids are tolerated** instead of `404` (the app is restarted far more often than a server
+normally is, and each call carries everything it needs). Strictness can be added behind a setting if
+a client needs it.
 
 Initialize also returns **server instructions** telling the model how to behave (use `set_state`
-for long tasks, keep text short, `ask` sparingly, pass a stable `source`). Tool descriptions repeat
-the same guidance.
+for longer jobs, report completion of any real work, keep text short, flag `needs_input` instead of waiting, always pass a stable
+`source`). Tool descriptions repeat the same guidance.
 
 ### Tools
 
 Defined once in `McpTools.definitions()` as JSON Schema; the same schema validates arguments
 (`McpSchema`), and violations come back as `isError` tool results (so the model can fix itself) rather
-than protocol errors.
+than protocol errors. `source` is required on all three tools; a missing or blank one is rejected
+before anything reaches the hub.
 
 | Tool | Notes |
 | --- | --- |
-| `notify(text, source?, priority?)` | queued; duplicates from the same source within 4s are dropped |
-| `set_state(status, source?, text?)` | updates the tray; announces `done`/`needs_input`/`error` on change |
-| `ask(question, choices?, source?, timeout_seconds?)` | holds the HTTP response open until answered/timeout; see below |
-| `clear(source?, all?)` | per-source or global wipe |
+| `notify(source, text, priority?)` | queued; duplicates from the same source within 4s are dropped |
+| `set_state(source, status, text?)` | updates the tray; announces `done`/`needs_input`/`error` on change |
+| `clear(source)` | wipes only that source's queue, bubble and status; there is no way for one session to clear another's |
 
-`ask` semantics: the call blocks (the model waits) until the user clicks a choice or
-`timeout_seconds` (default 45, 5-600) passes. The bubble shows for ~12s; if ignored it collapses to a
-pending question that is still answerable from the history panel or by clicking the character,
-until the timeout. Results: `{answered:true, choice, index}` or `{answered:false, reason:
-"timeout"|"cancelled"|"cleared"}`. Models and clients have their own tool-call timeouts (often
-~60s), so the default stays below that.
+**No question tool.** An earlier `ask` tool showed buttons and blocked the model's call until the
+human clicked one. It was removed: real questions usually need the session's context, the call blocked
+the model for up to the client's tool timeout, and the answer was guessed at when it expired. A
+session that is blocked calls `set_state(needs_input, text)` and stops; the human opens that session.
+That needed no waiting, no timeouts and no held-open requests, so the whole MCP path is synchronous.
 
 ## 7. Handling many AIs
 
-**Sources.** `SourceRegistry` maps a free-form name to a `SourceInfo`: color, glyph (initial) and an
-accessory (cap, bow, antenna, halo, crown, leaf). Known families (Claude, Copilot, Codex, Gemini,
-Cursor, VS Code, Terminal) get fixed looks, unknown names a stable hash-derived color and accessory,
-so "Claude Code · api" and "Claude Code · web" share orange but are separate tray chips. Names are
-sanitised and length-capped (they are rendered on screen).
+**Sources.** `SourceRegistry` maps a free-form name to a `SourceInfo`: a color derived from a hash of
+the name, and a glyph (its initial). There is no grouping by app or vendor: every distinct name is its
+own source, and a session picks its look by choosing its name, so "Fix login redirect" and
+"Refactor billing module" get different colors and separate tray chips. Names are case-insensitive,
+sanitised and capped at 80 characters (`SourceRegistry.MAX_NAME_LENGTH`, also the tool schema's
+`maxLength`, so an over-long name is an error rather than being cut silently). Long names are cut with
+an ellipsis in the bubble header and wrap in the history rows. The name comes from the required
+`source` argument on each tool call.
 
 **Priority queue.** `low < normal < high < urgent`, FIFO within a level.
 
 - *high* jumps ahead of waiting items; *urgent* additionally **preempts** the current bubble (the
   interrupted one is requeued if it had barely started).
-- Queue cap 24: overflow drops the lowest-priority oldest non-question; nothing is lost from history.
+- Queue cap 24: overflow drops the lowest-priority newest notice; nothing is lost from history.
 
 **Bubble duration.** `1.6s + 0.05s/char`, clamped 2.5-7s; x0.7 with 2+ waiting, x0.5 with 4+ (never
 under 1.6s); x1.4 for urgent. A 0.4s gap between bubbles lets the character react again.
 
 **Batching.** When 3+ low/normal `notify`/`done` notices wait, they collapse into one summary
 bubble: "4 agents finished: Claude Code, Copilot, Codex" or "5 updates: ...". The individual notices
-stay in the history. High/urgent items, questions and errors are never batched.
+stay in the history. High/urgent items and errors are never batched.
 
 **Status tray.** One chip per source whose status is not idle: source color + initial, state badge
 (spinning ring = working, check = done, pulsing "!" = needs input, x = error). Sorted by urgency.
-`done` fades after 90s, `error` after 10 min, `working` goes stale after 30 min (a crashed agent does
-not spin forever), `needs_input` after 60 min unless a question is pending.
-Glancing (opening the history) acknowledges done/error chips; `needs_input` persists until resolved.
+`done`, `error` and `needs_input` chips never fade: they wait for the user however long they were
+away, and glancing (opening the history) acknowledges all three. A `working` chip has nothing to
+acknowledge, so it goes stale once its session has been silent for 30 minutes (a crashed agent does
+not spin forever); any call from that source, including a repeated `working`, counts as a heartbeat.
 
-**History.** Last 100 notices, newest first, plus per-source status lines and any pending questions
-with buttons.
-
-**Accessory.** While a bubble from a source is up, the character wears that source's accessory.
+**History.** Last 100 notices, newest first, plus per-source status lines. The MCP `clear` tool never
+touches it (an AI cannot erase the user's record); only the human's "Clear everything" menu item
+empties it, together with the queue and chips. It asks first with an in-window "are you sure?" card
+(`ConfirmCard`: Cancel / Clear everything), which cancels itself after 10 seconds.
 
 ## 8. Testing
 
 - `tests/run_tests.gd` (headless): pack loader and validation, brain behavior (idle loop, random
-  breaks, attention interrupts, drag), hub (priority, batching, dedup, preemption,
-  durations, tray, asks incl. timeout/cancel), click-through polygon geometry, MCP protocol,
-  the **HTTP server over real loopback sockets** (handshake, keep-alive, chunked, split packets, origin/host
-  checks, bearer token, blocking `ask`, withdraw on hang-up) and the real main scene with synthetic
-  clicks.
+  breaks, attention interrupts, drag), hub (priority, batching, dedup, preemption, durations, tray,
+  read state), click-through polygon geometry, MCP protocol, the **HTTP server over real loopback
+  sockets** (handshake, keep-alive, chunked, split packets, origin/host checks, bearer token) and the
+  real main scene with synthetic clicks.
 - `scripts/test-mcp.ps1|sh`: black-box smoke test against a running instance.
 - `--screenshot` flags render the overlay with alpha to a PNG, which is how the UI was checked on a
   machine whose screen was covered by a full-screen game.
@@ -279,10 +288,9 @@ with buttons.
 ## 9. Not done yet / ideas
 
 - Sound cues and a Do-Not-Disturb / quiet-hours setting.
-- More characters; in-app pack picker; per-pack accessories offsets.
+- More characters; in-app pack picker.
 - Tray icon / autostart; installers; macOS and Linux verification of click-through (the polygon API is
   cross-platform, but only Windows has been exercised).
-- Persisted `Mcp-Session-Id`s so client names survive restarts.
 - Optional stdio shim binary and HTTP `Authorization` flow for remote/tunneled use.
 - Per-source mute and "focus mode" that batches everything below `high`.
 - Server-initiated `notifications/*` or elicitation (SSE) if clients start relying on them.

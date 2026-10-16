@@ -4,12 +4,12 @@ A tiny character that lives in a corner of your screen and tells you what your A
 
 PingPal runs an **MCP server** on your machine. Point Claude Code, GitHub Copilot, Codex, VS Code or any
 other MCP client at it, and the AI decides what the character says and does: *"Tests are green"*,
-*"Need your call on the migration"*, the character perking up when a long task finishes. You stop babysitting
+*"Need your input: which branch?"*, the character perking up when a long task finishes. You stop babysitting
 five terminals and just glance at the character.
 
 - Transparent, always-on-top, **click-through** except on the character and its bubbles.
-- Several AIs at once: each gets its own color, accessory and tray chip; urgent things jump the queue, floods are batched ("4 agents finished").
-- When nobody is talking, it loops an idle animation and now and then takes a short random break (nap, stretch, ...). Any new message gets one neutral attention animation.
+- Several AIs at once: each gets its own color and tray chip; urgent things jump the queue, floods are batched ("4 agents finished").
+- When nobody is talking, it loops an idle animation and now and then takes a short random break (nap, stretch, ...). A new message gets one neutral attention animation, which keeps going until you check it (click the bubble or the character).
 - Characters are swappable **packs** (sprite sheet + JSON). Ships with a pixel-art corgi (default) and a placeholder blob, *Pip*.
 
 Built with Godot 4.7 (GDScript, no addons). See [docs/DESIGN.md](docs/DESIGN.md) for how it works.
@@ -42,10 +42,10 @@ It listens on loopback only. Check it from a terminal:
 
 | Action | Result |
 | --- | --- |
-| Left-click the character | Open/close the history (everything you missed, plus any open question). Re-opens a question whose bubble timed out. |
-| Click a bubble | Dismiss it |
-| Drag the character | Move it along the strip; it resumes idling after you let go |
-| `Right-click` | Menu: history, clear everything, switch character pack (remembered across runs), next screen, quit |
+| Left-click the character | Open/close the history (everything you missed). Opening it counts as checking your messages: it ends the attention animation and clears finished, failed and waiting-for-you chips. |
+| Click a bubble | Dismiss it; that counts as reading it |
+| Drag the character | Move it along the strip; it resumes idling (or its attention animation, if something is still unread) after you let go |
+| `Right-click` | Menu: history, clear everything (messages, status chips and the history; it asks "are you sure?" first), switch character pack (remembered across runs), next screen, quit |
 | Click a tray chip | Open the history |
 
 ### Options
@@ -140,26 +140,37 @@ Bridge with [`mcp-remote`](https://www.npmjs.com/package/mcp-remote):
 
 ### Tell the AI how to use it
 
-PingPal sends usage instructions during the MCP handshake, but a line in your agent instructions
-(`CLAUDE.md`, `AGENTS.md`, `.github/copilot-instructions.md`) makes it reliable:
+PingPal sends short usage instructions during the MCP handshake, but not every client shows them to
+the model, so give your AI a proper guide. [docs/AGENT_INSTRUCTIONS.md](docs/AGENT_INSTRUCTIONS.md)
+explains both ways to do it:
 
-> Use the `pingpal` MCP server to keep me posted: `set_state(status="working")` when you start a
-> long task and `set_state(status="done")` when it finishes; `notify` for a short one-liner when
-> something is worth my attention; `ask` only when you are genuinely blocked on a decision. Keep
-> text under ~100 characters and pass `source` as "<your app> · <project>".
+- **A skill**: copy `skills/pingpal/` to your tool's skills folder (for example `~/.agents/skills/`).
+  It is only loaded when relevant and covers when to report, how to name the session, and how to ask
+  for you.
+- **A short snippet** for an always-on instructions file (`AGENTS.md`, `CLAUDE.md`,
+  `.github/copilot-instructions.md`), in the same document.
+
+In one sentence: *send `done` or `error` when you finish real work, `working` first only for longer jobs;
+flag `needs_input` and stop when you are blocked; use `notify` rarely; pass the same `source` on every call.*
 
 ## The tools
 
 | Tool | Arguments | What it does |
 | --- | --- | --- |
-| `notify` | `text`, `source?`, `priority?` low/normal/high/urgent | Speech bubble + attention animation. Low priority is batched; urgent interrupts. |
-| `set_state` | `status` working/done/needs_input/error/idle, `source?`, `text?` | Updates the tray chip. `done`, `needs_input` and `error` also announce themselves. |
-| `ask` | `question`, `choices?` (2-4, default Yes/No), `source?`, `timeout_seconds?` (default 45) | Shows buttons and **waits** for a click. Returns `{answered, choice, index}` or `{answered:false, reason}`. |
-| `clear` | `source?`, `all?` | Removes your queued messages, bubble, questions and status (or everyone's with `all`). |
+| `notify` | `source`, `text`, `priority?` low/normal/high/urgent | Speech bubble + attention animation. Low priority is batched; urgent interrupts. |
+| `set_state` | `source`, `status` working/done/needs_input/error/idle, `text?` | Updates the tray chip. `done`, `needs_input` and `error` also announce themselves with `text`. `done` and `error` chips also stay until you open the history. `needs_input` is how a session says "come to my session": its chip stays until you open the history too. |
+| `clear` | `source` | Removes your own queued messages, bubble and status. Other sources and the history are never affected: only the user's "Clear everything" menu item clears everything. |
 
-`source` names the caller ("Claude Code", "Copilot", ...). It defaults to the MCP client's name from
-the handshake, so it is optional, but add a suffix ("Claude Code · api") to tell parallel agents from
-the same app apart.
+There is deliberately no tool for asking questions with buttons: a real question usually needs the
+session's context, so the AI flags `needs_input` and you answer in the session itself.
+
+`source` is **required on every call**. It is a name that identifies the calling session, up to 80
+characters: the session's title if the model knows it ("Add contributor guide for character packs"),
+otherwise a short description of its task or repo. Each distinct name, compared case-insensitively, is
+its own source with its own color, tray chip and status, so a session picks its look by choosing its
+name. Use the same name on every call: a call with a different name counts as a different source. A
+call without `source`, or with one over 80 characters, is rejected as an error. Long names are cut
+with an ellipsis in the speech bubble and wrap in the history, where they show in full.
 
 By hand:
 
@@ -219,7 +230,7 @@ the visible pixels of the current frame, so transparent parts of a large frame n
 # equivalent: godot --headless --path . --import ; godot --headless --path . --script res://tests/run_tests.gd
 ```
 
-Covers pack loading, the idle state machine, the notification manager (priority, batching, asks,
+Covers pack loading, the idle state machine, the notification manager (priority, batching, read state,
 status), the MCP protocol, the HTTP server over real loopback sockets, and the main scene driven with
 synthetic clicks. `scripts/test-mcp.*` check a *running* app from outside.
 
@@ -227,7 +238,7 @@ synthetic clicks. `scripts/test-mcp.*` check a *running* app from outside.
 
 - **"Can't listen on port 7464"**: another PingPal (or program) has it. Use `--port=`.
 - **Character hidden behind a full-screen game**: exclusive full-screen apps cover overlays. Use windowed/borderless mode in the game.
-- **A client says the session is invalid after restarting PingPal**: PingPal accepts unknown session ids, so just retry; reconnecting restores the client name, otherwise pass `source`.
+- **A client says the session is invalid after restarting PingPal**: PingPal accepts unknown session ids, so just retry. Every tool call carries its own `source`, so nothing is lost.
 - **Nothing is clickable / everything is click-through**: run with `--no-click-through` to rule out the passthrough region.
 - Windows only draws pixels inside the click region (a Godot/OS quirk), so everything interactive is included in it by design.
 

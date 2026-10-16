@@ -1,14 +1,14 @@
 class_name HistoryPanel
 extends PanelContainer
 ## What you missed: every source's current status plus the latest messages, newest first.
-## Unanswered questions show their buttons here, so a bubble that timed out is never lost.
 
 signal closed
-signal choice_picked(ask_id: int, index: int)
 
 const MAX_ROWS: int = 30
 const PANEL_WIDTH: float = 360.0
 const MAX_HEIGHT: float = 240.0
+## Source names wider than this wrap onto more lines in the status rows instead of widening the panel.
+const NAME_COLUMN_WIDTH: float = 140.0
 
 var _hub: NotificationManager
 var _list: VBoxContainer
@@ -65,19 +65,13 @@ func refresh() -> void:
 		_list.add_child(_status_row(source))
 	if not sources.is_empty():
 		_list.add_child(HSeparator.new())
-	var pending: Array[Notice] = _hub.pending_asks()
-	for notice: Notice in pending:
-		_list.add_child(_notice_row(notice, true))
 	var shown: int = 0
 	for index: int in range(_hub.history.size() - 1, -1, -1):
-		var notice: Notice = _hub.history[index]
-		if pending.has(notice):
-			continue
-		_list.add_child(_notice_row(notice, false))
+		_list.add_child(_notice_row(_hub.history[index]))
 		shown += 1
 		if shown >= MAX_ROWS:
 			break
-	if shown == 0 and pending.is_empty() and sources.is_empty():
+	if shown == 0 and sources.is_empty():
 		_list.add_child(UiStyle.label("Nothing yet. Messages from your AIs will show up here.",
 			UiStyle.SMALL_FONT_SIZE, UiStyle.TEXT_DIM))
 	_fit.call_deferred()
@@ -94,7 +88,10 @@ func _status_row(source: SourceInfo) -> Control:
 	var row: HBoxContainer = HBoxContainer.new()
 	row.add_theme_constant_override("separation", 6)
 	row.add_child(_dot(source.color))
-	row.add_child(UiStyle.label(source.display_name, UiStyle.SMALL_FONT_SIZE, source.color.lightened(0.2)))
+	var name_label: Label = UiStyle.label(source.display_name, UiStyle.SMALL_FONT_SIZE, source.color.lightened(0.2))
+	name_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	name_label.custom_minimum_size.x = minf(_text_width(name_label.text, UiStyle.SMALL_FONT_SIZE), NAME_COLUMN_WIDTH)
+	row.add_child(name_label)
 	var status_text: String = String(source.status_name()).replace("_", " ")
 	if not source.status_text.is_empty():
 		status_text += ": " + source.status_text
@@ -106,32 +103,28 @@ func _status_row(source: SourceInfo) -> Control:
 	return row
 
 
-func _notice_row(notice: Notice, pending: bool) -> Control:
+func _notice_row(notice: Notice) -> Control:
 	var accent: Color = notice.source.color if notice.source != null else Color.WHITE
-	var box: VBoxContainer = VBoxContainer.new()
-	box.add_theme_constant_override("separation", 3)
 	var row: HBoxContainer = HBoxContainer.new()
 	row.add_theme_constant_override("separation", 6)
-	box.add_child(row)
 	row.add_child(_dot(accent))
-	var text: Label = UiStyle.label("%s  %s" % [notice.source.display_name, notice.text],
-		UiStyle.SMALL_FONT_SIZE, UiStyle.TEXT if notice.seen or pending else UiStyle.TEXT)
+	var body: VBoxContainer = VBoxContainer.new()
+	body.add_theme_constant_override("separation", 1)
+	body.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	row.add_child(body)
+	var name_label: Label = UiStyle.label(notice.source.display_name, UiStyle.SMALL_FONT_SIZE, accent.lightened(0.2))
+	name_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	body.add_child(name_label)
+	var text: Label = UiStyle.label(notice.text, UiStyle.FONT_SIZE, UiStyle.TEXT)
 	text.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	text.custom_minimum_size.x = 250.0
-	text.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	row.add_child(text)
+	body.add_child(text)
 	row.add_child(UiStyle.label(UiStyle.relative_time(notice.wall_time), UiStyle.SMALL_FONT_SIZE, UiStyle.TEXT_DIM))
-	if pending:
-		var buttons: HBoxContainer = HBoxContainer.new()
-		buttons.add_theme_constant_override("separation", 6)
-		for index: int in notice.choices.size():
-			var button: Button = Button.new()
-			button.text = notice.choices[index]
-			UiStyle.style_button(button, accent)
-			button.pressed.connect(func() -> void: choice_picked.emit(notice.id, index))
-			buttons.add_child(button)
-		box.add_child(buttons)
-	return box
+	return row
+
+
+static func _text_width(text: String, font_size: int) -> float:
+	return ThemeDB.fallback_font.get_string_size(text, HORIZONTAL_ALIGNMENT_LEFT, -1, font_size).x + 2.0
 
 
 static func _dot(color: Color) -> Control:

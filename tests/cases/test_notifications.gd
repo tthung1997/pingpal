@@ -16,8 +16,98 @@ func _drain(hub: NotificationManager, seconds: float) -> Array[Notice]:
 	return shown
 
 
-func _ask(hub: NotificationManager, out: Dictionary, source: String = "claude", timeout: float = 45.0) -> void:
-	out["result"] = await hub.ask(source, "Ship it?", PackedStringArray(["Yes", "No"]), timeout, 7)
+func test_attention_lasts_until_the_user_checks_the_message() -> void:
+	var hub: NotificationManager = _hub()
+	check(not hub.needs_attention(), "nothing to check at first")
+	hub.notify("a", "hello")
+	check(hub.needs_attention(), "a waiting message needs attention")
+	hub.advance(0.1)
+	check(hub.current != null, "it is on screen")
+	hub.advance(NotificationManager.duration_for(hub.current, 0) + 1.0)
+	check(hub.current == null, "the bubble timed out")
+	check(hub.needs_attention(), "but the message is still unread")
+	hub.acknowledge()
+	check(not hub.needs_attention(), "opening the history reads it")
+
+
+func test_clicking_a_bubble_reads_it() -> void:
+	var hub: NotificationManager = _hub()
+	var changes: Array[int] = [0]
+	hub.read_state_changed.connect(func() -> void: changes[0] += 1)
+	hub.notify("a", "hello")
+	hub.advance(0.1)
+	hub.dismiss_current()
+	check(not hub.needs_attention(), "waving the bubble away counts as reading it")
+	check(changes[0] > 0, "and listeners are told")
+
+
+func test_reading_a_summary_reads_everything_folded_into_it() -> void:
+	var timed_out: NotificationManager = _hub()
+	var clicked: NotificationManager = _hub()
+	for hub: NotificationManager in [timed_out, clicked]:
+		for name: String in ["a", "b", "c"]:
+			hub.notify(name, "done with " + name)
+		hub.advance(0.1)
+		eq(hub.current.kind, Notice.Kind.SUMMARY, "the three became one summary")
+	timed_out.advance(30.0)
+	check(timed_out.needs_attention(), "a summary that timed out keeps the attention")
+	clicked.dismiss_current()
+	check(not clicked.needs_attention(), "clicking the summary reads each notice folded into it")
+
+
+func test_needs_input_keeps_attention_until_the_user_checks_it() -> void:
+	var hub: NotificationManager = _hub()
+	hub.set_state("a", &"needs_input", "Which branch should I use?")
+	hub.advance(0.1)
+	eq(hub.current.text, "Which branch should I use?", "the reason is what the bubble says")
+	hub.advance(30.0)
+	check(hub.current == null and hub.needs_attention(), "the bubble timed out but the user has not looked yet")
+	eq(hub.active_sources().size(), 1, "and the chip is still up")
+	hub.acknowledge()
+	check(not hub.needs_attention(), "opening the history settles it")
+	eq(hub.active_sources().size(), 0, "and clears the chip: the user knows and will go to the session")
+
+
+func test_a_needs_input_chip_never_expires_on_its_own() -> void:
+	var hub: NotificationManager = _hub()
+	hub.set_state("a", &"needs_input", "Which branch?")
+	hub.set_state("b", &"working")
+	hub.advance(7 * 24 * 3600.0)
+	var names: Array[String] = []
+	for source: SourceInfo in hub.active_sources():
+		names.append(source.display_name)
+	eq(names, ["a"] as Array[String], "after a week away only the stale working chip is gone, not the one waiting for you")
+
+
+func test_clear_reads_that_sources_messages_only() -> void:
+	var hub: NotificationManager = _hub()
+	hub.notify("a", "from a")
+	hub.advance(0.1)
+	hub.advance(30.0)
+	hub.notify("b", "from b")
+	hub.advance(1.0)
+	hub.advance(30.0)
+	hub.clear("b")
+	check(hub.needs_attention(), "a's message is still unread")
+	hub.clear("a")
+	check(not hub.needs_attention(), "clearing a reads it too")
+
+
+func test_the_mcp_clear_keeps_the_history_but_the_user_can_wipe_it() -> void:
+	var hub: NotificationManager = _hub()
+	hub.notify("a", "one")
+	hub.notify("b", "two")
+	hub.set_state("a", &"working")
+	hub.advance(0.1)
+	hub.clear()
+	eq(hub.history.size(), 2, "an AI clearing its messages leaves the user's history alone")
+	check(not hub.needs_attention(), "but nothing is left to check")
+	var changes: Array[int] = [0]
+	hub.history_changed.connect(func() -> void: changes[0] += 1)
+	hub.clear_history()
+	eq(hub.history.size(), 0, "the user's clear empties the history")
+	check(changes[0] > 0, "and listeners are told")
+	check(not hub.needs_attention(), "with nothing left to check")
 
 
 func test_higher_priority_goes_first() -> void:
@@ -99,64 +189,56 @@ func test_status_tray() -> void:
 	eq(hub.active_sources()[0].display_name, "Copilot", "the source needing you sorts first")
 	hub.set_state("Copilot", &"idle")
 	hub.set_state("Claude Code", &"done")
-	hub.advance(NotificationManager.DONE_FADE_SECONDS + 1.0)
-	eq(hub.active_sources().size(), 0, "done chips fade away")
+	eq(hub.active_sources().size(), 1, "an idle source leaves the tray, a finished one stays")
+	hub.acknowledge()
+	eq(hub.active_sources().size(), 0, "until the user looks")
 
 
-func test_acknowledge_clears_done_but_not_needs_input() -> void:
+func test_done_and_error_chips_wait_for_the_user_however_long_it_takes() -> void:
+	var hub: NotificationManager = _hub()
+	hub.set_state("a", &"done", "All green")
+	hub.set_state("b", &"error", "Build failed")
+	hub.advance(7 * 24 * 3600.0)
+	eq(hub.active_sources().size(), 2, "after a week away both are still there")
+	hub.acknowledge()
+	eq(hub.active_sources().size(), 0, "and one look clears them")
+
+
+func test_a_working_chip_survives_while_its_session_keeps_reporting() -> void:
+	var hub: NotificationManager = _hub()
+	var stale: float = NotificationManager.WORKING_STALE_SECONDS
+	hub.set_state("a", &"working", "Running tests")
+	hub.set_state("b", &"working")
+	hub.advance(stale * 0.7)
+	hub.set_state("a", &"working", "Running tests")
+	hub.notify("b", "still here")
+	hub.advance(stale * 0.7)
+	eq(hub.active_sources().size(), 2, "a repeated status or any message counts as the session being alive")
+	hub.advance(stale * 0.7)
+	eq(hub.active_sources().size(), 0, "and once it falls silent for the whole window the chip goes")
+
+
+func test_acknowledge_clears_the_chips_that_ask_for_a_look() -> void:
 	var hub: NotificationManager = _hub()
 	hub.set_state("a", &"done")
 	hub.set_state("b", &"error")
 	hub.set_state("c", &"needs_input")
+	hub.set_state("d", &"working")
 	hub.acknowledge()
 	var left: Array[SourceInfo] = hub.active_sources()
-	eq(left.size(), 1, "only the blocked source remains")
-	eq(left[0].display_name, "c", "the one waiting on the human")
+	eq(left.size(), 1, "only the chip that is not about you remains")
+	eq(left[0].display_name, "d", "the one still working")
 
 
 func test_set_state_rejects_unknown_status() -> void:
 	check(_hub().set_state("a", &"dancing").has("error"), "unknown status is an error")
 
 
-func test_ask_returns_the_clicked_choice() -> void:
+func test_a_working_chip_still_goes_stale() -> void:
 	var hub: NotificationManager = _hub()
-	var out: Dictionary = {}
-	_ask(hub, out)
-	hub.advance(0.5)
-	check(hub.current != null and hub.current.is_ask(), "the question is on screen")
-	eq(hub.active_sources()[0].status, SourceInfo.Status.NEEDS_INPUT, "asker shows as needing input")
-	check(hub.answer_ask(hub.current.id, 1), "answering works")
-	eq(out["result"]["choice"], "No", "the awaiting caller got the choice")
-	eq(out["result"]["answered"], true, "marked answered")
-	check(hub.current == null, "bubble is gone")
-	eq(hub.active_sources()[0].status, SourceInfo.Status.WORKING, "asker goes back to working")
-
-
-func test_ask_times_out_but_stays_answerable_until_then() -> void:
-	var hub: NotificationManager = _hub()
-	var out: Dictionary = {}
-	_ask(hub, out, "claude", 30.0)
-	hub.advance(0.5)
-	hub.advance(NotificationManager.ASK_BUBBLE_SECONDS + 1.0)
-	check(hub.current == null, "the bubble timed out")
-	eq(hub.pending_asks().size(), 1, "but the question is still pending")
-	hub.reopen_asks()
-	hub.advance(0.5)
-	check(hub.current != null and hub.current.is_ask(), "clicking the character brings it back")
-	hub.advance(40.0)
-	eq(out["result"]["answered"], false, "eventually times out")
-	eq(out["result"]["reason"], "timeout", "with a reason")
-	eq(hub.pending_asks().size(), 0, "nothing pending")
-
-
-func test_ask_is_withdrawn_when_client_disconnects() -> void:
-	var hub: NotificationManager = _hub()
-	var out: Dictionary = {}
-	_ask(hub, out)
-	hub.advance(0.5)
-	hub.cancel_asks_owned_by(7)
-	eq(out["result"]["reason"], "cancelled", "the question is cancelled")
-	check(hub.current == null, "and the bubble removed")
+	hub.set_state("a", &"working")
+	hub.advance(NotificationManager.WORKING_STALE_SECONDS + 1.0)
+	eq(hub.active_sources().size(), 0, "a crashed agent does not spin forever")
 
 
 func test_clear_one_source_and_all() -> void:
@@ -189,15 +271,27 @@ func test_text_is_sanitized_and_capped() -> void:
 	check(not notice.text.contains("\u0007"), "control characters removed")
 
 
+func test_long_source_names_are_kept_up_to_the_limit() -> void:
+	var registry: SourceRegistry = SourceRegistry.new()
+	var title: String = "Add contributor guide for character packs"
+	eq(registry.resolve(title).display_name, title, "a 41-character session title is kept whole")
+	var shared: String = "Refactor the billing module and its tests, part "
+	check(registry.resolve(shared + "one") != registry.resolve(shared + "two"),
+		"names that differ after the 40th character are separate sources")
+	var too_long: String = "x".repeat(SourceRegistry.MAX_NAME_LENGTH + 20)
+	var cut: String = registry.resolve(too_long).display_name
+	eq(cut.length(), SourceRegistry.MAX_NAME_LENGTH, "anything past the limit is cut with an ellipsis")
+	check(cut.ends_with("…"), "and says so")
+
+
 func test_sources_get_stable_distinct_looks() -> void:
 	var registry: SourceRegistry = SourceRegistry.new()
-	var claude: SourceInfo = registry.resolve("claude-code")
-	eq(claude.family, "claude", "recognised family")
-	eq(registry.resolve("Claude Code · api").family, "claude", "variants share a family")
-	eq(registry.resolve("Claude Code · api").color, claude.color, "and a color")
-	check(registry.resolve("Claude Code · api") != claude, "but are separate sources")
-	check(registry.resolve("Visual Studio Code").family == "vscode", "VS Code is recognised")
-	check(registry.resolve("Codex").family == "codex", "Codex is recognised (not mistaken for generic 'code')")
+	var api: SourceInfo = registry.resolve("Copilot · api")
+	var web: SourceInfo = registry.resolve("Copilot · web")
+	check(api != web, "sessions with different names are separate sources")
+	check(api.color != web.color, "and look different even when they share a prefix")
+	eq(api.glyph, "C", "glyph is the initial")
+	eq(SourceRegistry.new().resolve("Copilot · api").color, api.color, "the same name always gets the same color")
 	var mine: SourceInfo = registry.resolve("my-script")
 	eq(registry.resolve("My-Script"), mine, "names are case-insensitive")
 	eq(mine.glyph, "M", "glyph is the initial")
