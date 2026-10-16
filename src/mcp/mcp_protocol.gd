@@ -20,7 +20,7 @@ const ERR_INTERNAL: int = -32603
 const MAX_SESSIONS: int = 256
 
 const INSTRUCTIONS: String = """PingPal is a small desktop character that shows the human what you are up to, so they don't have to keep this app open.
-- Call set_state(status="working") when you start a long task and set_state(status="done") when it finishes. If you are blocked and the human has to answer in your session, call set_state(status="needs_input", text="<what you need>") and then stop; they will open your session to reply. Use "error" if something failed.
+- When you finish real work (running commands, editing files, investigating), call set_state(status="done"), or "error" if it failed. For a longer job also call set_state(status="working") at the start. If you are blocked and the human has to answer in your session, call set_state(status="needs_input", text="<what you need>") and then stop; they will open your session to reply.
 - Use notify() for a brief, friendly one-liner (under ~100 characters). Don't narrate every step; messages from several AIs share one screen.
 - Every tool call needs a `source`: a name that identifies this session to the human (up to 80 characters). Use your session's title if you know it, otherwise describe the task or repo, for example "Fix login redirect". Each distinct name is its own entry (color, tray chip, status), so use exactly the same name on every call."""
 

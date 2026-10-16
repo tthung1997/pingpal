@@ -140,15 +140,18 @@ Bridge with [`mcp-remote`](https://www.npmjs.com/package/mcp-remote):
 
 ### Tell the AI how to use it
 
-PingPal sends usage instructions during the MCP handshake, but a line in your agent instructions
-(`CLAUDE.md`, `AGENTS.md`, `.github/copilot-instructions.md`) makes it reliable:
+PingPal sends short usage instructions during the MCP handshake, but not every client shows them to
+the model, so give your AI a proper guide. [docs/AGENT_INSTRUCTIONS.md](docs/AGENT_INSTRUCTIONS.md)
+explains both ways to do it:
 
-> Use the `pingpal` MCP server to keep me posted: `set_state(status="working")` when you start a
-> long task and `set_state(status="done")` when it finishes; `notify` for a short one-liner when
-> something is worth my attention; `set_state(status="needs_input", text="<what you need>")` when you
-> are blocked on me, then stop and wait (I will open your session). Keep text under ~100 characters
-> and always pass `source` as the title of this session (or a short description of its task), the
-> same on every call.
+- **A skill**: copy `skills/pingpal/` to your tool's skills folder (for example `~/.agents/skills/`).
+  It is only loaded when relevant and covers when to report, how to name the session, and how to ask
+  for you.
+- **A short snippet** for an always-on instructions file (`AGENTS.md`, `CLAUDE.md`,
+  `.github/copilot-instructions.md`), in the same document.
+
+In one sentence: *send `done` or `error` when you finish real work, `working` first only for longer jobs;
+flag `needs_input` and stop when you are blocked; use `notify` rarely; pass the same `source` on every call.*
 
 ## The tools
 

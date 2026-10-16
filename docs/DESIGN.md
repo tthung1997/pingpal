@@ -216,7 +216,7 @@ normally is, and each call carries everything it needs). Strictness can be added
 a client needs it.
 
 Initialize also returns **server instructions** telling the model how to behave (use `set_state`
-for long tasks, keep text short, flag `needs_input` instead of waiting, always pass a stable
+for longer jobs, report completion of any real work, keep text short, flag `needs_input` instead of waiting, always pass a stable
 `source`). Tool descriptions repeat the same guidance.
 
 ### Tools

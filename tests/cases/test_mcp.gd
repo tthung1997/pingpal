@@ -117,6 +117,33 @@ func test_clear_only_touches_the_named_source_even_if_asked_for_more() -> void:
 	eq(hub.active_sources()[0].display_name, "Session B", "the other session is untouched")
 
 
+func test_the_agent_skill_matches_the_real_tools_and_limits() -> void:
+	var skill: String = FileAccess.get_file_as_string("res://skills/pingpal/SKILL.md").replace("\r\n", "\n")
+	var guide: String = FileAccess.get_file_as_string("res://docs/AGENT_INSTRUCTIONS.md").replace("\r\n", "\n")
+	check(skill.begins_with("---\nname: pingpal\ndescription: "), "the skill has the standard frontmatter")
+	var close: int = skill.find("\n---\n", 4)
+	check(close > 0, "and the frontmatter is closed")
+	var description: String = skill.substr(0, close) if close > 0 else ""
+	check(description.length() > 100, "with a description that says when to use it")
+
+	var tools: Array[String] = []
+	for definition: Dictionary in McpTools.new(NotificationManager.new()).definitions():
+		tools.append(definition["name"])
+	for tool_name: String in tools:
+		check(skill.contains("`%s`" % tool_name) or skill.contains("%s(" % tool_name), "the skill covers %s" % tool_name)
+		check(guide.contains("`%s`" % tool_name), "so does the install guide")
+	for status: String in McpTools.STATUSES:
+		check(skill.contains("\"%s\"" % status) or skill.contains("`%s`" % status), "the skill covers status %s" % status)
+	for text: String in [skill, guide]:
+		check(not text.contains("ask("), "neither mentions the removed ask tool")
+		check(not text.contains("`ask`"), "in any form")
+
+	check(skill.contains("%d characters" % SourceRegistry.MAX_NAME_LENGTH), "the source length limit is current")
+	check(skill.contains("limit is %d" % NotificationManager.MAX_TEXT_LENGTH), "so is the text length limit")
+	var stale_minutes: int = int(NotificationManager.WORKING_STALE_SECONDS / 60.0)
+	check(skill.contains("%d minutes" % stale_minutes), "and the working timeout (%d minutes)" % stale_minutes)
+
+
 func test_bad_arguments_are_tool_errors_not_protocol_errors() -> void:
 	var protocol: McpProtocol = _protocol()
 	var cases: Array[Dictionary] = [

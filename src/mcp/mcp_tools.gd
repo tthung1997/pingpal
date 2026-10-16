@@ -41,7 +41,7 @@ func definitions() -> Array:
 		{
 			"name": "set_state",
 			"title": "Set your status",
-			"description": "Report what you are doing so it shows in the status tray. Call with 'working' when you start a long task and 'done' when it finishes. Use 'needs_input' when you are blocked and the human must come to your session to answer (put the reason in text; the human will open your session, so do not wait for a reply here), 'error' when something failed, 'idle' to clear yourself. Cheaper and less noisy than notify.",
+			"description": "Report what you are doing so it shows in the status tray. Call with 'done' when you finish real work (however short) and 'working' first only when starting a longer job. Use 'needs_input' when you are blocked and the human must come to your session to answer (put the reason in text; the human will open your session, so do not wait for a reply here), 'error' when something failed, 'idle' to clear yourself. Cheaper and less noisy than notify.",
 			"inputSchema": {
 				"type": "object",
 				"properties": {
