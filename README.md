@@ -8,8 +8,8 @@ other MCP client at it, and the AI decides what the character says and does: *"T
 five terminals and just glance at the character.
 
 - Transparent, always-on-top, **click-through** except on the character and its bubbles.
-- Several AIs at once: each gets its own color, accessory and tray chip; urgent things jump the queue, floods are batched ("4 agents finished").
-- When nobody is talking, it loops an idle animation and now and then takes a short random break (nap, stretch, ...). Any new message gets one neutral attention animation.
+- Several AIs at once: each gets its own color and tray chip; urgent things jump the queue, floods are batched ("4 agents finished").
+- When nobody is talking, it loops an idle animation and now and then takes a short random break (nap, stretch, ...). A new message gets one neutral attention animation, which keeps going until you check it (click the bubble or the character).
 - Characters are swappable **packs** (sprite sheet + JSON). Ships with a pixel-art corgi (default) and a placeholder blob, *Pip*.
 
 Built with Godot 4.7 (GDScript, no addons). See [docs/DESIGN.md](docs/DESIGN.md) for how it works.
@@ -42,9 +42,9 @@ It listens on loopback only. Check it from a terminal:
 
 | Action | Result |
 | --- | --- |
-| Left-click the character | Open/close the history (everything you missed, plus any open question). Re-opens a question whose bubble timed out. |
-| Click a bubble | Dismiss it |
-| Drag the character | Move it along the strip; it resumes idling after you let go |
+| Left-click the character | Open/close the history (everything you missed, plus any open question). Opening it counts as checking your messages and ends the attention animation. Re-opens a question whose bubble timed out. |
+| Click a bubble | Dismiss it; that counts as reading it |
+| Drag the character | Move it along the strip; it resumes idling (or its attention animation, if something is still unread) after you let go |
 | `Right-click` | Menu: history, clear everything, switch character pack (remembered across runs), next screen, quit |
 | Click a tray chip | Open the history |
 
@@ -146,20 +146,25 @@ PingPal sends usage instructions during the MCP handshake, but a line in your ag
 > Use the `pingpal` MCP server to keep me posted: `set_state(status="working")` when you start a
 > long task and `set_state(status="done")` when it finishes; `notify` for a short one-liner when
 > something is worth my attention; `ask` only when you are genuinely blocked on a decision. Keep
-> text under ~100 characters and pass `source` as "<your app> · <project>".
+> text under ~100 characters and always pass `source` as the title of this session (or a short
+> description of its task), the same on every call.
 
 ## The tools
 
 | Tool | Arguments | What it does |
 | --- | --- | --- |
-| `notify` | `text`, `source?`, `priority?` low/normal/high/urgent | Speech bubble + attention animation. Low priority is batched; urgent interrupts. |
-| `set_state` | `status` working/done/needs_input/error/idle, `source?`, `text?` | Updates the tray chip. `done`, `needs_input` and `error` also announce themselves. |
-| `ask` | `question`, `choices?` (2-4, default Yes/No), `source?`, `timeout_seconds?` (default 45) | Shows buttons and **waits** for a click. Returns `{answered, choice, index}` or `{answered:false, reason}`. |
-| `clear` | `source?`, `all?` | Removes your queued messages, bubble, questions and status (or everyone's with `all`). |
+| `notify` | `source`, `text`, `priority?` low/normal/high/urgent | Speech bubble + attention animation. Low priority is batched; urgent interrupts. |
+| `set_state` | `source`, `status` working/done/needs_input/error/idle, `text?` | Updates the tray chip. `done`, `needs_input` and `error` also announce themselves. |
+| `ask` | `source`, `question`, `choices?` (2-4, default Yes/No), `timeout_seconds?` (default 45) | Shows buttons and **waits** for a click. Returns `{answered, choice, index}` or `{answered:false, reason}`. |
+| `clear` | `source`, `all?` | Removes your queued messages, bubble, questions and status (or everyone's with `all`). |
 
-`source` names the caller ("Claude Code", "Copilot", ...). It defaults to the MCP client's name from
-the handshake, so it is optional, but add a suffix ("Claude Code · api") to tell parallel agents from
-the same app apart.
+`source` is **required on every call**. It is a name that identifies the calling session, up to 80
+characters: the session's title if the model knows it ("Add contributor guide for character packs"),
+otherwise a short description of its task or repo. Each distinct name, compared case-insensitively, is
+its own source with its own color, tray chip and status, so a session picks its look by choosing its
+name. Use the same name on every call: a call with a different name counts as a different source. A
+call without `source`, or with one over 80 characters, is rejected as an error. Long names are cut
+with an ellipsis in the speech bubble and wrap in the history, where they show in full.
 
 By hand:
 
@@ -227,7 +232,7 @@ synthetic clicks. `scripts/test-mcp.*` check a *running* app from outside.
 
 - **"Can't listen on port 7464"**: another PingPal (or program) has it. Use `--port=`.
 - **Character hidden behind a full-screen game**: exclusive full-screen apps cover overlays. Use windowed/borderless mode in the game.
-- **A client says the session is invalid after restarting PingPal**: PingPal accepts unknown session ids, so just retry; reconnecting restores the client name, otherwise pass `source`.
+- **A client says the session is invalid after restarting PingPal**: PingPal accepts unknown session ids, so just retry. Every tool call carries its own `source`, so nothing is lost.
 - **Nothing is clickable / everything is click-through**: run with `--no-click-through` to rule out the passthrough region.
 - Windows only draws pixels inside the click region (a Godot/OS quirk), so everything interactive is included in it by design.
 

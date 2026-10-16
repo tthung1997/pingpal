@@ -1,25 +1,12 @@
 class_name SourceRegistry
 extends RefCounted
-## Turns whatever name an AI client gives ("claude-code", "Visual Studio Code", "my-script")
-## into a stable SourceInfo with a recognisable look.
+## Turns whatever name an AI client gives ("Claude Code · api", "my-script") into a stable
+## SourceInfo with a recognisable look: a color derived from the name and its first letter.
+## Every distinct name is its own source, so there is no grouping by app or vendor.
 
-const MAX_NAME_LENGTH: int = 40
+const MAX_NAME_LENGTH: int = 80
 const MAX_SOURCES: int = 32
 const SYSTEM_KEY: String = "pingpal"
-
-const ACCESSORIES: Array[StringName] = [&"cap", &"bow", &"antenna", &"halo", &"crown", &"leaf"]
-
-## Known clients get fixed looks. Order matters: the first family whose pattern appears in the
-## lower-cased name wins ("claude code" must match claude before the generic "code").
-const FAMILIES: Array[Dictionary] = [
-	{"family": "claude", "patterns": ["claude"], "color": "d97757", "accessory": &"antenna"},
-	{"family": "copilot", "patterns": ["copilot"], "color": "8957e5", "accessory": &"halo"},
-	{"family": "codex", "patterns": ["codex", "openai", "chatgpt"], "color": "10a37f", "accessory": &"cap"},
-	{"family": "gemini", "patterns": ["gemini"], "color": "4285f4", "accessory": &"crown"},
-	{"family": "cursor", "patterns": ["cursor"], "color": "e0e0e0", "accessory": &"leaf"},
-	{"family": "vscode", "patterns": ["vscode", "visual studio code", "vs code", "vs-code"], "color": "3794ff", "accessory": &"bow"},
-	{"family": "terminal", "patterns": ["terminal", "shell", "curl", "powershell", "bash"], "color": "9aa5b1", "accessory": &"cap"},
-]
 
 var _sources: Dictionary = {}
 
@@ -45,10 +32,8 @@ func system() -> SourceInfo:
 		var source: SourceInfo = SourceInfo.new()
 		source.key = SYSTEM_KEY
 		source.display_name = "PingPal"
-		source.family = SYSTEM_KEY
 		source.color = Color("6fc7f2")
 		source.glyph = "P"
-		source.accessory = &"cap"
 		_sources[SYSTEM_KEY] = source
 	return _sources[SYSTEM_KEY]
 
@@ -69,26 +54,9 @@ func _build(key: String, display: String) -> SourceInfo:
 	var source: SourceInfo = SourceInfo.new()
 	source.key = key
 	source.display_name = display
-	var known: Dictionary = _match_family(key)
-	if not known.is_empty():
-		source.family = known["family"]
-		source.color = Color(known["color"])
-		source.accessory = known["accessory"]
-	else:
-		var hash_value: int = absi(key.hash())
-		source.family = key
-		source.color = Color.from_hsv(float(hash_value % 360) / 360.0, 0.55, 0.95)
-		source.accessory = ACCESSORIES[floori(hash_value / 360.0) % ACCESSORIES.size()]
+	source.color = Color.from_hsv(float(absi(key.hash()) % 360) / 360.0, 0.55, 0.95)
 	source.glyph = _glyph(display)
 	return source
-
-
-func _match_family(key: String) -> Dictionary:
-	for family: Dictionary in FAMILIES:
-		for pattern: String in family["patterns"]:
-			if key.contains(pattern):
-				return family
-	return {}
 
 
 ## Strips control characters (these end up on screen) and caps the length.

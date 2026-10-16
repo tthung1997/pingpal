@@ -22,7 +22,7 @@ const MAX_SESSIONS: int = 256
 const INSTRUCTIONS: String = """PingPal is a small desktop character that shows the human what you are up to, so they don't have to keep this app open.
 - Call set_state(status="working") when you start a long task and set_state(status="done") when it finishes. Use "needs_input" or ask() only when you are really blocked on the human; "error" if something failed.
 - Use notify() for a brief, friendly one-liner (under ~100 characters). Don't narrate every step; messages from several AIs share one screen.
-- Pass a short, stable `source` (for example "Claude Code · api") if several agents run from the same app; otherwise your client name is used."""
+- Every tool call needs a `source`: a name that identifies this session to the human (up to 80 characters). Use your session's title if you know it, otherwise describe the task or repo, for example "Fix login redirect". Each distinct name is its own entry (color, tray chip, status), so use exactly the same name on every call."""
 
 var tools: McpTools
 ## session id -> {client_name, client_version, protocol_version}
@@ -114,10 +114,7 @@ func _dispatch(id: Variant, method: String, params: Dictionary, ctx: Dictionary)
 				arguments = {}
 			if not arguments is Dictionary:
 				return _error(id, ERR_INVALID_PARAMS, "arguments must be an object")
-			var call_ctx: Dictionary = ctx.duplicate()
-			var session: Dictionary = sessions.get(str(ctx.get("session_id", "")), {})
-			call_ctx["client_name"] = session.get("client_name", "")
-			var result: Dictionary = await tools.call_tool(tool_name, arguments, call_ctx)
+			var result: Dictionary = await tools.call_tool(tool_name, arguments, ctx)
 			return _result(id, result)
 		"resources/list":
 			return _result(id, {"resources": []})

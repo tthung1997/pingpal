@@ -278,7 +278,7 @@ func _handle_post(conn: Conn, headers: Dictionary, body: PackedByteArray, close:
 		_send(conn, 400, {}, JSON.stringify(McpProtocol.parse_error()), close)
 		return
 	# Unknown or missing session ids are tolerated (the server may have restarted since the client
-	# initialized); the client name is then unknown and the tool's `source` argument names the caller.
+	# initialized): a tool call carries everything it needs, including its `source`.
 	var ctx: Dictionary = {"session_id": str(headers.get("mcp-session-id", "")), "conn_id": conn.id}
 	var reply: Variant = await protocol.handle_payload(json.data, ctx)
 	if conn.closed:

@@ -15,6 +15,8 @@ signal notice_hidden(notice: Notice)
 signal source_changed(source: SourceInfo)
 signal history_changed
 signal cleared(source_key: String)
+## Something was marked read, so whether the user still has something to check may have changed.
+signal read_state_changed
 
 const MAX_QUEUE: int = 24
 const MAX_HISTORY: int = 100
@@ -62,6 +64,24 @@ func pending_asks() -> Array[Notice]:
 	for ask_id: Variant in _pending_asks:
 		result.append(_pending_asks[ask_id])
 	return result
+
+
+## True while the user still has something to check: a question waiting for an answer, a message
+## that was shown but not yet clicked, opened in the history or answered, or more on the way. The
+## character keeps its attention animation for exactly this long.
+func needs_attention() -> bool:
+	if not _pending_asks.is_empty() or not _queue.is_empty():
+		return true
+	for notice: Notice in history:
+		if notice.seen and not notice.read:
+			return true
+	return false
+
+
+## The user looked at this notice, and at anything that was folded into it.
+func mark_read(notice: Notice) -> void:
+	_set_read(notice)
+	read_state_changed.emit()
 
 
 ## Sources that are doing something, most urgent first (the tray's contents).
@@ -145,17 +165,25 @@ func cancel_asks_owned_by(owner: int) -> void:
 			_resolve_ask(notice, {"answered": false, "reason": "cancelled"})
 
 
-## The user waved a bubble away. Questions stay answerable from the history panel.
+## The user waved a bubble away by clicking it, which counts as reading it. Questions stay
+## answerable from the history panel.
 func dismiss_current() -> void:
 	if current != null:
+		_set_read(current)
 		_hide_current()
+		read_state_changed.emit()
 
 
-## The user glanced at the character: finished/failed chips have done their job.
+## The user glanced at the character: finished/failed chips have done their job, and every message
+## shown so far counts as read.
 func acknowledge() -> void:
 	for source: SourceInfo in registry.all():
 		if source.status == SourceInfo.Status.DONE or source.status == SourceInfo.Status.ERROR:
 			_apply_status(source, SourceInfo.Status.IDLE, "")
+	for notice: Notice in history:
+		if notice.seen:
+			notice.read = true
+	read_state_changed.emit()
 
 
 ## Clears one source's queue/bubble/status, or everything when `source_name` is empty.
@@ -164,6 +192,9 @@ func clear(source_name: String = "") -> Dictionary:
 	if not source_name.strip_edges().is_empty():
 		key = registry.resolve(source_name).key
 	var removed: int = 0
+	for notice: Notice in history:
+		if notice.seen and (key.is_empty() or notice.source.key == key):
+			notice.read = true
 	for notice: Notice in _queue.duplicate():
 		if key.is_empty() or notice.source.key == key:
 			_queue.erase(notice)
@@ -177,6 +208,7 @@ func clear(source_name: String = "") -> Dictionary:
 		if (key.is_empty() or source.key == key) and source.status != SourceInfo.Status.IDLE:
 			_apply_status(source, SourceInfo.Status.IDLE, "")
 	cleared.emit(key)
+	read_state_changed.emit()
 	return {"cleared": removed, "scope": key if not key.is_empty() else "all"}
 
 
@@ -351,6 +383,8 @@ func _resolve_ask(notice: Notice, result: Dictionary) -> void:
 		return
 	_pending_asks.erase(notice.id)
 	notice.answered = bool(result.get("answered", false))
+	if notice.answered:
+		_set_read(notice)
 	_queue.erase(notice)
 	var source: SourceInfo = notice.source
 	var still_waiting: bool = false
@@ -362,6 +396,7 @@ func _resolve_ask(notice: Notice, result: Dictionary) -> void:
 	if current == notice:
 		_hide_current()
 	history_changed.emit()
+	read_state_changed.emit()
 	notice.resolved.emit(result)
 
 
@@ -414,6 +449,12 @@ func _prune_recent() -> void:
 	for key: Variant in _recent.keys():
 		if _clock - float(_recent[key]) >= DEDUP_SECONDS:
 			_recent.erase(key)
+
+
+func _set_read(notice: Notice) -> void:
+	notice.read = true
+	for item: Notice in notice.batched:
+		item.read = true
 
 
 static func _clip(text: String) -> String:

@@ -62,33 +62,55 @@ func test_tool_calls_drive_the_hub() -> void:
 	ctx = {"session_id": ctx["new_session_id"]}
 
 	var reply: Dictionary = await protocol.handle_payload(
-		_rpc(3, "tools/call", {"name": "notify", "arguments": {"text": "hi there"}}), ctx)
+		_rpc(3, "tools/call", {"name": "notify", "arguments": {"source": "Claude Code · api", "text": "hi there"}}), ctx)
 	eq(reply["result"]["isError"], false, "notify succeeds")
-	eq(hub.history[0].source.display_name, "Claude Code", "source comes from the session's client name")
+	eq(hub.history[0].source.display_name, "Claude Code · api", "the caller's source names who spoke")
 
 	reply = await protocol.handle_payload(
-		_rpc(4, "tools/call", {"name": "notify", "arguments": {"text": "x", "source": "Codex"}}), ctx)
-	eq(hub.history[1].source.display_name, "Codex", "an explicit source wins")
+		_rpc(4, "tools/call", {"name": "notify", "arguments": {"source": "Codex", "text": "x"}}), ctx)
+	eq(hub.history[1].source.display_name, "Codex", "another source is a separate entry")
 
 	reply = await protocol.handle_payload(
-		_rpc(5, "tools/call", {"name": "set_state", "arguments": {"status": "working"}}), ctx)
+		_rpc(5, "tools/call", {"name": "set_state", "arguments": {"source": "Codex", "status": "working"}}), ctx)
 	eq(JSON.parse_string(_text(reply["result"]))["status"], "working", "set_state reports the new status")
 	eq(hub.active_sources().size(), 1, "the caller shows in the tray")
 
-	reply = await protocol.handle_payload(_rpc(7, "tools/call", {"name": "clear", "arguments": {}}), ctx)
+	reply = await protocol.handle_payload(
+		_rpc(7, "tools/call", {"name": "clear", "arguments": {"source": "Codex"}}), ctx)
 	eq(reply["result"]["isError"], false, "clear succeeds")
 	eq(hub.active_sources().size(), 0, "clear removed the caller's state")
+
+
+func test_source_is_required_on_every_tool() -> void:
+	var hub: NotificationManager = NotificationManager.new()
+	var protocol: McpProtocol = McpProtocol.new(McpTools.new(hub))
+	var valid: Array[Dictionary] = [
+		{"name": "notify", "arguments": {"text": "x"}},
+		{"name": "set_state", "arguments": {"status": "working"}},
+		{"name": "ask", "arguments": {"question": "q"}},
+		{"name": "clear", "arguments": {}},
+	]
+	for params: Dictionary in valid:
+		var reply: Dictionary = await protocol.handle_payload(_rpc(1, "tools/call", params), {})
+		check(reply["result"]["isError"] == true, "%s without source is rejected" % params["name"])
+		check(_text(reply["result"]).contains("source"), "%s: the error names the missing argument" % params["name"])
+		params["arguments"]["source"] = "   "
+		reply = await protocol.handle_payload(_rpc(1, "tools/call", params), {})
+		check(reply["result"]["isError"] == true, "%s with a blank source is rejected" % params["name"])
+	eq(hub.history.size(), 0, "nothing reached the hub")
+	eq(hub.active_sources().size(), 0, "and no source was created")
 
 
 func test_bad_arguments_are_tool_errors_not_protocol_errors() -> void:
 	var protocol: McpProtocol = _protocol()
 	var cases: Array[Dictionary] = [
-		{"name": "notify", "arguments": {}},
-		{"name": "notify", "arguments": {"text": 5}},
-		{"name": "set_state", "arguments": {"status": "napping"}},
-		{"name": "ask", "arguments": {"question": "q", "choices": ["only one"]}},
-		{"name": "notify", "arguments": {"text": "x", "priority": "whenever"}},
-		{"name": "perform", "arguments": {"action": "wave"}},
+		{"name": "notify", "arguments": {"source": "T"}},
+		{"name": "notify", "arguments": {"source": "T", "text": 5}},
+		{"name": "set_state", "arguments": {"source": "T", "status": "napping"}},
+		{"name": "ask", "arguments": {"source": "T", "question": "q", "choices": ["only one"]}},
+		{"name": "notify", "arguments": {"source": "T", "text": "x", "priority": "whenever"}},
+		{"name": "notify", "arguments": {"source": "x".repeat(81), "text": "x"}},
+		{"name": "perform", "arguments": {"source": "T", "action": "wave"}},
 		{"name": "nope", "arguments": {}},
 	]
 	for params: Dictionary in cases:
@@ -205,11 +227,11 @@ func test_http_handshake_and_tool_call() -> void:
 	eq(JSON.parse_string(list["body"])["result"]["tools"].size(), 4, "tools/list over HTTP")
 
 	var call: Dictionary = await _send(port, _raw_post(JSON.stringify(_rpc(3, "tools/call",
-		{"name": "notify", "arguments": {"text": "over the wire"}})), {"Mcp-Session-Id": session}))
+		{"name": "notify", "arguments": {"source": "Wire Test", "text": "over the wire"}})), {"Mcp-Session-Id": session}))
 	eq(call["status"], 200, "tools/call -> 200")
 	eq(JSON.parse_string(call["body"])["result"]["isError"], false, "tool succeeded")
 	eq(hub.history.size(), 1, "the hub got the notice")
-	eq(hub.history[0].source.display_name, "Claude Code", "attributed to the session's client")
+	eq(hub.history[0].source.display_name, "Wire Test", "attributed to the source the caller named")
 	_stop(env)
 
 
@@ -295,7 +317,7 @@ func test_http_ask_is_withdrawn_when_the_client_hangs_up() -> void:
 	var server: McpHttpServer = env["server"]
 	server.connection_closed.connect(hub.cancel_asks_owned_by)
 	var peer: StreamPeerTCP = await _connect(env["port"])
-	var call: Dictionary = _rpc(1, "tools/call", {"name": "ask", "arguments": {"question": "Deploy?"}})
+	var call: Dictionary = _rpc(1, "tools/call", {"name": "ask", "arguments": {"source": "Claude", "question": "Deploy?"}})
 	peer.put_data(_raw_post(JSON.stringify(call)).to_utf8_buffer())
 	await wait_frames(10)
 	eq(hub.pending_asks().size(), 1, "question is up")

@@ -9,6 +9,8 @@ signal choice_picked(ask_id: int, index: int)
 const MAX_ROWS: int = 30
 const PANEL_WIDTH: float = 360.0
 const MAX_HEIGHT: float = 240.0
+## Source names wider than this wrap onto more lines in the status rows instead of widening the panel.
+const NAME_COLUMN_WIDTH: float = 140.0
 
 var _hub: NotificationManager
 var _list: VBoxContainer
@@ -94,7 +96,10 @@ func _status_row(source: SourceInfo) -> Control:
 	var row: HBoxContainer = HBoxContainer.new()
 	row.add_theme_constant_override("separation", 6)
 	row.add_child(_dot(source.color))
-	row.add_child(UiStyle.label(source.display_name, UiStyle.SMALL_FONT_SIZE, source.color.lightened(0.2)))
+	var name_label: Label = UiStyle.label(source.display_name, UiStyle.SMALL_FONT_SIZE, source.color.lightened(0.2))
+	name_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	name_label.custom_minimum_size.x = minf(_text_width(name_label.text, UiStyle.SMALL_FONT_SIZE), NAME_COLUMN_WIDTH)
+	row.add_child(name_label)
 	var status_text: String = String(source.status_name()).replace("_", " ")
 	if not source.status_text.is_empty():
 		status_text += ": " + source.status_text
@@ -114,12 +119,17 @@ func _notice_row(notice: Notice, pending: bool) -> Control:
 	row.add_theme_constant_override("separation", 6)
 	box.add_child(row)
 	row.add_child(_dot(accent))
-	var text: Label = UiStyle.label("%s  %s" % [notice.source.display_name, notice.text],
-		UiStyle.SMALL_FONT_SIZE, UiStyle.TEXT if notice.seen or pending else UiStyle.TEXT)
+	var body: VBoxContainer = VBoxContainer.new()
+	body.add_theme_constant_override("separation", 1)
+	body.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	row.add_child(body)
+	var name_label: Label = UiStyle.label(notice.source.display_name, UiStyle.SMALL_FONT_SIZE, accent.lightened(0.2))
+	name_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	body.add_child(name_label)
+	var text: Label = UiStyle.label(notice.text, UiStyle.FONT_SIZE, UiStyle.TEXT)
 	text.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	text.custom_minimum_size.x = 250.0
-	text.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	row.add_child(text)
+	body.add_child(text)
 	row.add_child(UiStyle.label(UiStyle.relative_time(notice.wall_time), UiStyle.SMALL_FONT_SIZE, UiStyle.TEXT_DIM))
 	if pending:
 		var buttons: HBoxContainer = HBoxContainer.new()
@@ -132,6 +142,10 @@ func _notice_row(notice: Notice, pending: bool) -> Control:
 			buttons.add_child(button)
 		box.add_child(buttons)
 	return box
+
+
+static func _text_width(text: String, font_size: int) -> float:
+	return ThemeDB.fallback_font.get_string_size(text, HORIZONTAL_ALIGNMENT_LEFT, -1, font_size).x + 2.0
 
 
 static func _dot(color: Color) -> Control:

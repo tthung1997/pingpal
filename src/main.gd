@@ -7,9 +7,6 @@ extends Node
 ##   PingHub signals -> Main -> CharacterBrain / SpeechBubble / StatusTray / HistoryPanel
 
 const GROUND_MARGIN: float = 6.0
-## Per-source hats/antennas on the character while its bubble is up. Off until they are redrawn
-## to match the pixel art; the source colour still shows on the bubble and tray chips.
-const SHOW_ACCESSORIES: bool = false
 const STACK_GAP: float = 4.0
 ## The character starts this far in from the right edge, where you are likely looking.
 const START_INSET: float = 260.0
@@ -122,6 +119,7 @@ func _build_scene() -> void:
 func _connect_hub() -> void:
 	PingHub.notice_shown.connect(_on_notice_shown)
 	PingHub.notice_hidden.connect(_on_notice_hidden)
+	PingHub.read_state_changed.connect(_sync_attention)
 	PingHub.source_changed.connect(_on_source_changed)
 	PingHub.history_changed.connect(_refresh_history)
 
@@ -233,17 +231,28 @@ func _clickable_rects() -> Array[Rect2]:
 # --- Hub -> presentation ------------------------------------------------------------------------
 
 func _on_notice_shown(notice: Notice) -> void:
-	_brain.react()
-	if SHOW_ACCESSORIES and notice.source != null and notice.source.key != SourceRegistry.SYSTEM_KEY:
-		_actor.show_accessory(notice.source)
+	if _history.visible:
+		# The history is open, so the user is already reading it.
+		PingHub.mark_read(notice)
+	_sync_attention()
 	_bubble.show_notice(notice)
 
 
 func _on_notice_hidden(_notice: Notice) -> void:
-	if PingConfig.preview.is_empty():
-		_brain.release()
-	_actor.hide_accessory()
 	_bubble.hide_bubble()
+	_sync_attention()
+
+
+## The character keeps its attention animation for as long as there is something the user has not
+## checked yet, not just while a bubble is up, so a message that times out is never missed.
+func _sync_attention() -> void:
+	if _brain == null or not PingConfig.preview.is_empty():
+		return
+	if PingHub.needs_attention():
+		if _brain.mode != CharacterBrain.Mode.HELD:
+			_brain.react()
+	else:
+		_brain.release()
 
 
 func _on_source_changed(_source: SourceInfo) -> void:
@@ -269,6 +278,7 @@ func _on_hitbox_input(event: InputEvent) -> void:
 			else:
 				if _dragging:
 					_brain.drop()
+					_sync_attention()
 				elif _pressed:
 					_on_character_clicked()
 				_pressed = false

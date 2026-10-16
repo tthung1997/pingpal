@@ -20,6 +20,84 @@ func _ask(hub: NotificationManager, out: Dictionary, source: String = "claude", 
 	out["result"] = await hub.ask(source, "Ship it?", PackedStringArray(["Yes", "No"]), timeout, 7)
 
 
+func test_attention_lasts_until_the_user_checks_the_message() -> void:
+	var hub: NotificationManager = _hub()
+	check(not hub.needs_attention(), "nothing to check at first")
+	hub.notify("a", "hello")
+	check(hub.needs_attention(), "a waiting message needs attention")
+	hub.advance(0.1)
+	check(hub.current != null, "it is on screen")
+	hub.advance(NotificationManager.duration_for(hub.current, 0) + 1.0)
+	check(hub.current == null, "the bubble timed out")
+	check(hub.needs_attention(), "but the message is still unread")
+	hub.acknowledge()
+	check(not hub.needs_attention(), "opening the history reads it")
+
+
+func test_clicking_a_bubble_reads_it() -> void:
+	var hub: NotificationManager = _hub()
+	var changes: Array[int] = [0]
+	hub.read_state_changed.connect(func() -> void: changes[0] += 1)
+	hub.notify("a", "hello")
+	hub.advance(0.1)
+	hub.dismiss_current()
+	check(not hub.needs_attention(), "waving the bubble away counts as reading it")
+	check(changes[0] > 0, "and listeners are told")
+
+
+func test_reading_a_summary_reads_everything_folded_into_it() -> void:
+	var timed_out: NotificationManager = _hub()
+	var clicked: NotificationManager = _hub()
+	for hub: NotificationManager in [timed_out, clicked]:
+		for name: String in ["a", "b", "c"]:
+			hub.notify(name, "done with " + name)
+		hub.advance(0.1)
+		eq(hub.current.kind, Notice.Kind.SUMMARY, "the three became one summary")
+	timed_out.advance(30.0)
+	check(timed_out.needs_attention(), "a summary that timed out keeps the attention")
+	clicked.dismiss_current()
+	check(not clicked.needs_attention(), "clicking the summary reads each notice folded into it")
+
+
+func test_a_question_keeps_attention_until_answered() -> void:
+	var hub: NotificationManager = _hub()
+	var out: Dictionary = {}
+	_ask(hub, out)
+	hub.advance(0.5)
+	hub.advance(NotificationManager.ASK_BUBBLE_SECONDS + 1.0)
+	check(hub.current == null and hub.needs_attention(), "a pending question needs attention after its bubble is gone")
+	hub.reopen_asks()
+	hub.advance(0.5)
+	hub.answer_ask(hub.current.id, 0)
+	check(not hub.needs_attention(), "answering it settles the matter")
+
+
+func test_an_unanswered_question_that_times_out_stays_unread() -> void:
+	var hub: NotificationManager = _hub()
+	var out: Dictionary = {}
+	_ask(hub, out, "claude", 30.0)
+	hub.advance(0.5)
+	hub.advance(40.0)
+	eq(out["result"]["reason"], "timeout", "the question timed out")
+	check(hub.needs_attention(), "the user never saw an answer prompt resolve, so it is still unread")
+	hub.acknowledge()
+	check(not hub.needs_attention(), "until they open the history")
+
+
+func test_clear_reads_that_sources_messages_only() -> void:
+	var hub: NotificationManager = _hub()
+	hub.notify("a", "from a")
+	hub.advance(0.1)
+	hub.advance(30.0)
+	hub.notify("b", "from b")
+	hub.advance(1.0)
+	hub.advance(30.0)
+	hub.clear("b")
+	check(hub.needs_attention(), "a's message is still unread")
+	hub.clear("a")
+	check(not hub.needs_attention(), "clearing a reads it too")
+
+
 func test_higher_priority_goes_first() -> void:
 	var hub: NotificationManager = _hub()
 	hub.notify("a", "low one", Notice.Priority.LOW)
@@ -189,15 +267,27 @@ func test_text_is_sanitized_and_capped() -> void:
 	check(not notice.text.contains("\u0007"), "control characters removed")
 
 
+func test_long_source_names_are_kept_up_to_the_limit() -> void:
+	var registry: SourceRegistry = SourceRegistry.new()
+	var title: String = "Add contributor guide for character packs"
+	eq(registry.resolve(title).display_name, title, "a 41-character session title is kept whole")
+	var shared: String = "Refactor the billing module and its tests, part "
+	check(registry.resolve(shared + "one") != registry.resolve(shared + "two"),
+		"names that differ after the 40th character are separate sources")
+	var too_long: String = "x".repeat(SourceRegistry.MAX_NAME_LENGTH + 20)
+	var cut: String = registry.resolve(too_long).display_name
+	eq(cut.length(), SourceRegistry.MAX_NAME_LENGTH, "anything past the limit is cut with an ellipsis")
+	check(cut.ends_with("…"), "and says so")
+
+
 func test_sources_get_stable_distinct_looks() -> void:
 	var registry: SourceRegistry = SourceRegistry.new()
-	var claude: SourceInfo = registry.resolve("claude-code")
-	eq(claude.family, "claude", "recognised family")
-	eq(registry.resolve("Claude Code · api").family, "claude", "variants share a family")
-	eq(registry.resolve("Claude Code · api").color, claude.color, "and a color")
-	check(registry.resolve("Claude Code · api") != claude, "but are separate sources")
-	check(registry.resolve("Visual Studio Code").family == "vscode", "VS Code is recognised")
-	check(registry.resolve("Codex").family == "codex", "Codex is recognised (not mistaken for generic 'code')")
+	var api: SourceInfo = registry.resolve("Copilot · api")
+	var web: SourceInfo = registry.resolve("Copilot · web")
+	check(api != web, "sessions with different names are separate sources")
+	check(api.color != web.color, "and look different even when they share a prefix")
+	eq(api.glyph, "C", "glyph is the initial")
+	eq(SourceRegistry.new().resolve("Copilot · api").color, api.color, "the same name always gets the same color")
 	var mine: SourceInfo = registry.resolve("my-script")
 	eq(registry.resolve("My-Script"), mine, "names are case-insensitive")
 	eq(mine.glyph, "M", "glyph is the initial")

@@ -8,8 +8,9 @@ extends RefCounted
 ##   IDLE      loops the main idle animation for as long as nothing else happens
 ##   IDLE  ->  BREAK      after a random while, a short variation from the pack's `breaks`
 ##   BREAK ->  IDLE       when the break has run its course
-##   any   ->  ATTENTION  a new message arrived; one neutral animation, held until it goes away
-##   ATTENTION -> IDLE    when the message is dismissed or times out
+##   any   ->  ATTENTION  a message is waiting for the user; one neutral animation, held until the
+##                        user has checked everything (the app decides when, via `release()`)
+##   ATTENTION -> IDLE    when nothing is left to check
 ##   any   ->  HELD -> IDLE   the user is dragging the character
 
 enum Mode { IDLE, BREAK, ATTENTION, HELD }
@@ -67,8 +68,8 @@ func update(delta: float) -> void:
 				_enter_idle()
 
 
-## A new message arrived: play the attention animation until `release()`. Interrupts whatever
-## is playing, including a break.
+## Something is waiting for the user: play the attention animation until `release()`. Interrupts
+## whatever is playing, including a break. Safe to call again while already waiting.
 func react() -> void:
 	_hold(ATTENTION_STATE)
 
@@ -78,7 +79,7 @@ func preview(state: StringName) -> void:
 	_hold(state)
 
 
-## Ends the attention animation (the bubble went away).
+## Ends the attention animation (the user has checked everything).
 func release() -> void:
 	if mode == Mode.ATTENTION:
 		_enter_idle()

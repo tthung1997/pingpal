@@ -98,7 +98,6 @@ sprite sheet. The app asks for **semantic states**, never animation names.
   "sheet": "sheet.png",
   "frame_size": [32, 32],
   "anchor": [16, 30],                // feet, in frame px (the character stands on this point)
-  "head": [16, 6],                   // where accessories sit
   "behavior": {                      // all optional
     "idle_seconds": [6, 14],         // how long the idle loop runs before a break may start
     "break_seconds": [3, 6],         // how long a break lasts
@@ -120,7 +119,7 @@ all be packs:
 | --- | --- | --- |
 | `idle` (required) | the main loop | whenever nothing else is happening; also while being dragged |
 | `breaks` (optional) | short variations: a nap, a stretch, anything | picked at random, for `break_seconds`, after each `idle_seconds` |
-| `attention` (required) | one neutral "look at me" | every new message, for as long as its bubble is up; it never says good or bad |
+| `attention` (required) | one neutral "look at me" | whenever a message is waiting, until the user checks it; it never says good or bad |
 
 Break names are states: each must map (via `states`, or by sharing a name with an animation) to an
 animation other than `idle`. A pack with no breaks simply idles. States the pack does not map
@@ -155,20 +154,28 @@ stateDiagram-v2
   [*] --> IDLE
   IDLE --> BREAK: after idle_seconds, a random break
   BREAK --> IDLE: after break_seconds
-  IDLE --> ATTENTION: new message
-  BREAK --> ATTENTION: new message
-  ATTENTION --> IDLE: release (bubble gone)
+  IDLE --> ATTENTION: message waiting
+  BREAK --> ATTENTION: message waiting
+  ATTENTION --> IDLE: release (everything checked)
   IDLE --> HELD: user drags
   HELD --> IDLE: drop
+  HELD --> ATTENTION: drop while something is unread
 ```
 
 - **Idle** loops indefinitely. Each time it is (re)entered, it runs for a fresh random
   `idle_seconds` before the next break, including after a message or a drag.
 - **Breaks** are picked at random from the pack's `breaks`, never the same one twice in a row when
   there is a choice, and last a random `break_seconds`.
-- Messages **interrupt** whatever is playing: a notice calls `react(effect)`, which shows the
-  `attention` animation until its bubble goes away. Status (`working`, `done`, ...) only drives the
-  tray; it does not change the animation.
+- Messages **interrupt** whatever is playing and show the `attention` animation. It is held for as
+  long as the user has something to check, not just while the bubble is up, so a message that times
+  out is never missed. Status (`working`, `done`, ...) only drives the tray; it does not change the
+  animation.
+- **What counts as checked** (`NotificationManager.needs_attention()`): a notice that was shown stays
+  *unread* until the user clicks its bubble, answers it, opens the history (click the character or a
+  tray chip), or its source is cleared. A summary bubble reads every notice folded into it. Pending
+  questions and queued notices also keep the attention. A message that arrives while the history is
+  open is read at once. `Main` re-evaluates this on `read_state_changed` and releases the character
+  when nothing is left; after a drag it resumes attention if something is still unread.
 - The character stays where it is; the user can drag it along the strip.
 
 ## 6. MCP server
@@ -202,28 +209,30 @@ Behavior and hardening:
 | Concurrency | all connections are polled from `_process`; a request that awaits (`ask`) just keeps its connection busy while others are served |
 | Disconnects | if a client hangs up mid-`ask`, the question is withdrawn (`connection_closed` -> `cancel_asks_owned_by`) |
 
-Sessions: `initialize` returns an `Mcp-Session-Id` and records `clientInfo` (title, else name). The
-client's name becomes the default `source`. **Unknown or missing session ids are tolerated** instead
-of `404`: the app is restarted far more often than a server normally is, and a pure notification
-tool is better off attributing to `source` (or "Unknown") than failing. Strictness can be added
-behind a setting if a client needs it.
+Sessions: `initialize` returns an `Mcp-Session-Id` and records `clientInfo` (title, else name), the
+negotiated protocol version and the client version. The session id is **not** an identity: who is
+speaking is decided by the required `source` argument on every tool call, so **unknown or missing
+session ids are tolerated** instead of `404` (the app is restarted far more often than a server
+normally is, and each call carries everything it needs). Strictness can be added behind a setting if
+a client needs it.
 
 Initialize also returns **server instructions** telling the model how to behave (use `set_state`
-for long tasks, keep text short, `ask` sparingly, pass a stable `source`). Tool descriptions repeat
-the same guidance.
+for long tasks, keep text short, `ask` sparingly, always pass a stable `source`). Tool descriptions
+repeat the same guidance.
 
 ### Tools
 
 Defined once in `McpTools.definitions()` as JSON Schema; the same schema validates arguments
 (`McpSchema`), and violations come back as `isError` tool results (so the model can fix itself) rather
-than protocol errors.
+than protocol errors. `source` is required on all four tools; a missing or blank one is rejected
+before anything reaches the hub.
 
 | Tool | Notes |
 | --- | --- |
-| `notify(text, source?, priority?)` | queued; duplicates from the same source within 4s are dropped |
-| `set_state(status, source?, text?)` | updates the tray; announces `done`/`needs_input`/`error` on change |
-| `ask(question, choices?, source?, timeout_seconds?)` | holds the HTTP response open until answered/timeout; see below |
-| `clear(source?, all?)` | per-source or global wipe |
+| `notify(source, text, priority?)` | queued; duplicates from the same source within 4s are dropped |
+| `set_state(source, status, text?)` | updates the tray; announces `done`/`needs_input`/`error` on change |
+| `ask(source, question, choices?, timeout_seconds?)` | holds the HTTP response open until answered/timeout; see below |
+| `clear(source, all?)` | per-source or global wipe |
 
 `ask` semantics: the call blocks (the model waits) until the user clicks a choice or
 `timeout_seconds` (default 45, 5-600) passes. The bubble shows for ~12s; if ignored it collapses to a
@@ -234,11 +243,14 @@ until the timeout. Results: `{answered:true, choice, index}` or `{answered:false
 
 ## 7. Handling many AIs
 
-**Sources.** `SourceRegistry` maps a free-form name to a `SourceInfo`: color, glyph (initial) and an
-accessory (cap, bow, antenna, halo, crown, leaf). Known families (Claude, Copilot, Codex, Gemini,
-Cursor, VS Code, Terminal) get fixed looks, unknown names a stable hash-derived color and accessory,
-so "Claude Code · api" and "Claude Code · web" share orange but are separate tray chips. Names are
-sanitised and length-capped (they are rendered on screen).
+**Sources.** `SourceRegistry` maps a free-form name to a `SourceInfo`: a color derived from a hash of
+the name, and a glyph (its initial). There is no grouping by app or vendor: every distinct name is its
+own source, and a session picks its look by choosing its name, so "Fix login redirect" and
+"Refactor billing module" get different colors and separate tray chips. Names are case-insensitive,
+sanitised and capped at 80 characters (`SourceRegistry.MAX_NAME_LENGTH`, also the tool schema's
+`maxLength`, so an over-long name is an error rather than being cut silently). Long names are cut with
+an ellipsis in the bubble header and wrap in the history rows. The name comes from the required
+`source` argument on each tool call.
 
 **Priority queue.** `low < normal < high < urgent`, FIFO within a level.
 
@@ -262,8 +274,6 @@ Glancing (opening the history) acknowledges done/error chips; `needs_input` pers
 **History.** Last 100 notices, newest first, plus per-source status lines and any pending questions
 with buttons.
 
-**Accessory.** While a bubble from a source is up, the character wears that source's accessory.
-
 ## 8. Testing
 
 - `tests/run_tests.gd` (headless): pack loader and validation, brain behavior (idle loop, random
@@ -279,10 +289,9 @@ with buttons.
 ## 9. Not done yet / ideas
 
 - Sound cues and a Do-Not-Disturb / quiet-hours setting.
-- More characters; in-app pack picker; per-pack accessories offsets.
+- More characters; in-app pack picker.
 - Tray icon / autostart; installers; macOS and Linux verification of click-through (the polygon API is
   cross-platform, but only Windows has been exercised).
-- Persisted `Mcp-Session-Id`s so client names survive restarts.
 - Optional stdio shim binary and HTTP `Authorization` flow for remote/tunneled use.
 - Per-source mute and "focus mode" that batches everything below `high`.
 - Server-initiated `notifications/*` or elicitation (SSE) if clients start relying on them.

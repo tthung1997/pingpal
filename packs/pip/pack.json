@@ -7,7 +7,6 @@
   "sheet": "sheet.png",
   "frame_size": [32, 32],
   "anchor": [16, 30],
-  "head": [16, 6],
   "behavior": {
     "idle_seconds": [6.0, 14.0],
     "break_seconds": [3.0, 6.0],

@@ -21,6 +21,8 @@ var wall_time: float = 0.0
 var clock_time: float = 0.0
 var shown_clock: float = -1.0
 var seen: bool = false
+## The user has checked it: clicked its bubble, answered it, or opened the history.
+var read: bool = false
 
 ## Question fields.
 var choices: PackedStringArray = PackedStringArray()
