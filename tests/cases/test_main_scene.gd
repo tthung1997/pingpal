@@ -216,6 +216,59 @@ func test_history_rows_set_the_source_apart_from_the_message() -> void:
 	PingHub.history.clear()
 
 
+func test_clear_everything_asks_first_and_then_empties_the_history_panel() -> void:
+	var main: Node = await _boot()
+	PingHub.advance(10.0)
+	PingHub.notify("Copilot", "Build finished")
+	PingHub.set_state("Copilot", &"working")
+	PingHub.advance(1.0)
+	await wait_frames(2)
+	_click(main, MOUSE_BUTTON_LEFT)
+	check(main._history.visible, "the history is open")
+	var shows_message: Callable = func() -> bool:
+		return not main._history.find_children("*", "Label", true, false).filter(
+			func(node: Node) -> bool: return (node as Label).text == "Build finished").is_empty()
+	check(shows_message.call(), "and lists the message")
+
+	main._on_menu_item(&"clear")
+	check(main._confirm.visible, "choosing Clear everything asks first")
+	eq(PingHub.history.size(), 1, "nothing has been deleted yet")
+	check(main._clickable_rects().any(func(rect: Rect2) -> bool: return rect.encloses(main._confirm.gui_rect())),
+		"the question is inside the clickable area, so it is drawn and clickable")
+
+	main._confirm._cancel_button.pressed.emit()
+	check(not main._confirm.visible, "Cancel closes the question")
+	eq(PingHub.history.size(), 1, "and keeps everything")
+	eq(PingHub.active_sources().size(), 1, "including the tray chip")
+
+	main._on_menu_item(&"clear")
+	main._confirm._confirm_button.pressed.emit()
+	await wait_frames(3)
+	check(not main._confirm.visible, "confirming closes the question")
+	eq(PingHub.history.size(), 0, "and empties the history")
+	check(not shows_message.call(), "the open history panel no longer shows it")
+	eq(PingHub.active_sources().size(), 0, "and the tray chips are gone")
+	main.queue_free()
+
+
+func test_the_clear_question_cancels_itself() -> void:
+	var card: ConfirmCard = ConfirmCard.new()
+	tree.root.add_child(card)
+	var outcome: Array[String] = []
+	card.confirmed.connect(func() -> void: outcome.append("confirmed"))
+	card.cancelled.connect(func() -> void: outcome.append("cancelled"))
+	card.ask("Sure?", "Yes", Vector2(50, 100))
+	check(card.visible, "it is up")
+	card.tick(ConfirmCard.TIMEOUT_SECONDS - 1.0)
+	check(card.visible, "it waits a while")
+	card.tick(2.0)
+	check(not card.visible, "then goes away on its own")
+	eq(outcome, ["cancelled"] as Array[String], "counting as a cancel, never a confirm")
+	card.tick(100.0)
+	eq(outcome.size(), 1, "and only once")
+	card.queue_free()
+
+
 func test_right_click_opens_the_menu() -> void:
 	var main: Node = await _boot()
 	_click(main, MOUSE_BUTTON_RIGHT)

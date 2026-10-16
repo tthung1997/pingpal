@@ -72,12 +72,11 @@ func definitions() -> Array:
 		{
 			"name": "clear",
 			"title": "Clear messages and status",
-			"description": "Remove your queued messages, bubble, pending questions and tray status. Pass all=true to clear every source.",
+			"description": "Remove your own queued messages, bubble, pending questions and tray status. Only the source you name is affected; other sources and the user's history are left alone.",
 			"inputSchema": {
 				"type": "object",
 				"properties": {
 					"source": SOURCE_SCHEMA,
-					"all": {"type": "boolean", "default": false, "description": "Clear every source, not just yours."},
 				},
 				"required": ["source"],
 			},
@@ -109,7 +108,7 @@ func call_tool(tool_name: String, arguments: Dictionary, ctx: Dictionary) -> Dic
 				float(args["timeout_seconds"]), int(ctx.get("conn_id", 0)))
 			return _ok(answer)
 		"clear":
-			return _ok(hub.clear("" if bool(args["all"]) else source))
+			return _ok(hub.clear(source))
 	return _fail("Unknown tool '%s'" % tool_name)
 
 

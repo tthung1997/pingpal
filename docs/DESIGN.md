@@ -232,7 +232,7 @@ before anything reaches the hub.
 | `notify(source, text, priority?)` | queued; duplicates from the same source within 4s are dropped |
 | `set_state(source, status, text?)` | updates the tray; announces `done`/`needs_input`/`error` on change |
 | `ask(source, question, choices?, timeout_seconds?)` | holds the HTTP response open until answered/timeout; see below |
-| `clear(source, all?)` | per-source or global wipe |
+| `clear(source)` | wipes only that source's queue, bubble, questions and status; there is no way for one session to clear another's |
 
 `ask` semantics: the call blocks (the model waits) until the user clicks a choice or
 `timeout_seconds` (default 45, 5-600) passes. The bubble shows for ~12s; if ignored it collapses to a
@@ -272,7 +272,10 @@ not spin forever), `needs_input` after 60 min unless a question is pending.
 Glancing (opening the history) acknowledges done/error chips; `needs_input` persists until resolved.
 
 **History.** Last 100 notices, newest first, plus per-source status lines and any pending questions
-with buttons.
+with buttons. The MCP `clear` tool never touches it (an AI cannot erase the user's record); only the
+human's "Clear everything" menu item empties it, together with the queue, questions and chips. It
+asks first with an in-window "are you sure?" card (`ConfirmCard`: Cancel / Clear everything), which
+cancels itself after 10 seconds.
 
 ## 8. Testing
 

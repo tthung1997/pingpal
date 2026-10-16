@@ -45,7 +45,7 @@ It listens on loopback only. Check it from a terminal:
 | Left-click the character | Open/close the history (everything you missed, plus any open question). Opening it counts as checking your messages and ends the attention animation. Re-opens a question whose bubble timed out. |
 | Click a bubble | Dismiss it; that counts as reading it |
 | Drag the character | Move it along the strip; it resumes idling (or its attention animation, if something is still unread) after you let go |
-| `Right-click` | Menu: history, clear everything, switch character pack (remembered across runs), next screen, quit |
+| `Right-click` | Menu: history, clear everything (messages, questions, status chips and the history; it asks "are you sure?" first), switch character pack (remembered across runs), next screen, quit |
 | Click a tray chip | Open the history |
 
 ### Options
@@ -156,7 +156,7 @@ PingPal sends usage instructions during the MCP handshake, but a line in your ag
 | `notify` | `source`, `text`, `priority?` low/normal/high/urgent | Speech bubble + attention animation. Low priority is batched; urgent interrupts. |
 | `set_state` | `source`, `status` working/done/needs_input/error/idle, `text?` | Updates the tray chip. `done`, `needs_input` and `error` also announce themselves. |
 | `ask` | `source`, `question`, `choices?` (2-4, default Yes/No), `timeout_seconds?` (default 45) | Shows buttons and **waits** for a click. Returns `{answered, choice, index}` or `{answered:false, reason}`. |
-| `clear` | `source`, `all?` | Removes your queued messages, bubble, questions and status (or everyone's with `all`). |
+| `clear` | `source` | Removes your own queued messages, bubble, questions and status. Other sources and the history are never affected: only the user's "Clear everything" menu item clears everything. |
 
 `source` is **required on every call**. It is a name that identifies the calling session, up to 80
 characters: the session's title if the model knows it ("Add contributor guide for character packs"),

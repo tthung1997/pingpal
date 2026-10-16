@@ -186,6 +186,14 @@ func acknowledge() -> void:
 	read_state_changed.emit()
 
 
+## The user wiped their history. Unlike `clear()`, which an AI calls through MCP for its own
+## messages and leaves the history alone, this is only reachable from the human's menu.
+func clear_history() -> void:
+	history.clear()
+	history_changed.emit()
+	read_state_changed.emit()
+
+
 ## Clears one source's queue/bubble/status, or everything when `source_name` is empty.
 func clear(source_name: String = "") -> Dictionary:
 	var key: String = ""

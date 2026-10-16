@@ -98,6 +98,23 @@ func test_clear_reads_that_sources_messages_only() -> void:
 	check(not hub.needs_attention(), "clearing a reads it too")
 
 
+func test_the_mcp_clear_keeps_the_history_but_the_user_can_wipe_it() -> void:
+	var hub: NotificationManager = _hub()
+	hub.notify("a", "one")
+	hub.notify("b", "two")
+	hub.set_state("a", &"working")
+	hub.advance(0.1)
+	hub.clear()
+	eq(hub.history.size(), 2, "an AI clearing its messages leaves the user's history alone")
+	check(not hub.needs_attention(), "but nothing is left to check")
+	var changes: Array[int] = [0]
+	hub.history_changed.connect(func() -> void: changes[0] += 1)
+	hub.clear_history()
+	eq(hub.history.size(), 0, "the user's clear empties the history")
+	check(changes[0] > 0, "and listeners are told")
+	check(not hub.needs_attention(), "with nothing left to check")
+
+
 func test_higher_priority_goes_first() -> void:
 	var hub: NotificationManager = _hub()
 	hub.notify("a", "low one", Notice.Priority.LOW)

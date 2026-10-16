@@ -20,6 +20,7 @@ var _tray: StatusTray
 var _bubble: SpeechBubble
 var _history: HistoryPanel
 var _menu: ContextMenu
+var _confirm: ConfirmCard
 var _server: McpHttpServer
 
 var _world: Vector2 = Vector2(640, 420)
@@ -114,6 +115,10 @@ func _build_scene() -> void:
 	_menu = ContextMenu.new()
 	_menu.item_chosen.connect(_on_menu_item)
 	_stage.add_child(_menu)
+
+	_confirm = ConfirmCard.new()
+	_confirm.confirmed.connect(_clear_everything)
+	_stage.add_child(_confirm)
 
 
 func _connect_hub() -> void:
@@ -225,6 +230,8 @@ func _clickable_rects() -> Array[Rect2]:
 		rects.append(Rect2(center_x - 12.0, card.end.y, 24.0, maxf(hit.position.y - card.end.y, 1.0)))
 	if _menu.visible:
 		rects.append(_menu.gui_rect())
+	if _confirm.visible:
+		rects.append(_confirm.gui_rect())
 	return rects
 
 
@@ -351,8 +358,17 @@ func _on_menu_item(id: StringName) -> void:
 		&"history":
 			_open_history()
 		&"clear":
-			PingHub.clear()
+			# Where the menu was, so the question appears under the pointer that just chose it.
+			var corner: Vector2 = Vector2(_menu.position.x, _menu.position.y + _menu.size.y)
+			_confirm.ask("Clear all messages, questions and history?\nThis can't be undone.", "Clear everything", corner)
+			_confirm.position.x = _clamp_x(corner.x, _confirm.size.x)
 		&"screen":
 			_overlay.move_to_next_screen()
 		&"quit":
 			get_tree().quit()
+
+
+## Everything the user can see: bubble, queue, open questions, tray chips, and the history.
+func _clear_everything() -> void:
+	PingHub.clear()
+	PingHub.clear_history()

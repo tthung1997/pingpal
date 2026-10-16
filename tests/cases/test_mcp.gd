@@ -101,6 +101,23 @@ func test_source_is_required_on_every_tool() -> void:
 	eq(hub.active_sources().size(), 0, "and no source was created")
 
 
+func test_clear_only_touches_the_named_source_even_if_asked_for_more() -> void:
+	var hub: NotificationManager = NotificationManager.new()
+	var protocol: McpProtocol = McpProtocol.new(McpTools.new(hub))
+	hub.set_state("Session A", &"working")
+	hub.set_state("Session B", &"working")
+	var tool_def: Dictionary = {}
+	for definition: Dictionary in McpTools.new(hub).definitions():
+		if definition["name"] == "clear":
+			tool_def = definition
+	check(not (tool_def["inputSchema"]["properties"] as Dictionary).has("all"), "the clear tool has no `all` option")
+	var reply: Dictionary = await protocol.handle_payload(_rpc(1, "tools/call",
+		{"name": "clear", "arguments": {"source": "Session A", "all": true}}), {})
+	eq(reply["result"]["isError"], false, "an old client that still sends all=true is not rejected")
+	eq(hub.active_sources().size(), 1, "but only its own status was cleared")
+	eq(hub.active_sources()[0].display_name, "Session B", "the other session is untouched")
+
+
 func test_bad_arguments_are_tool_errors_not_protocol_errors() -> void:
 	var protocol: McpProtocol = _protocol()
 	var cases: Array[Dictionary] = [
