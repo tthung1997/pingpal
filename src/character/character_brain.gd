@@ -38,6 +38,16 @@ func _init(p_pack: CharacterPack = null) -> void:
 	_enter_idle()
 
 
+## Switches to a different character pack without losing position or attention state.
+func set_pack(p_pack: CharacterPack) -> void:
+	pack = p_pack
+	_last_break = &""
+	if mode == Mode.ATTENTION:
+		anim_state = ATTENTION_STATE
+	else:
+		_enter_idle()
+
+
 ## Widest the user may drag the character.
 func set_limits(low: float, high: float) -> void:
 	limit_min = low

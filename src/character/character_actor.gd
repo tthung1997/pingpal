@@ -31,6 +31,16 @@ func setup(p_pack: CharacterPack, p_brain: CharacterBrain, pixel_scale: int) -> 
 	_play(brain.anim_state)
 
 
+## Hot-swaps the character pack on stage while keeping position and scale.
+func set_pack(p_pack: CharacterPack) -> void:
+	pack = p_pack
+	_sprite.sprite_frames = pack.frames
+	_sprite.offset = -pack.anchor
+	_accessory.position = pack.head - pack.anchor
+	_animation = &""
+	_play(brain.anim_state)
+
+
 func show_accessory(source: SourceInfo) -> void:
 	_accessory.show_for(source)
 

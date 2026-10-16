@@ -145,6 +145,10 @@ func _start_server() -> void:
 
 func _on_layout_changed(logical_size: Vector2) -> void:
 	_world = logical_size
+	_update_limits()
+
+
+func _update_limits() -> void:
 	var half_width: float = _pack.frame_size.x * PingConfig.pixel_scale * 0.5
 	var edge: float = PingConfig.edge_margin + half_width
 	var right: float = _world.x - edge
@@ -153,6 +157,19 @@ func _on_layout_changed(logical_size: Vector2) -> void:
 	if not _placed:
 		_placed = true
 		_brain.x = maxf(edge, right - START_INSET)
+
+
+## Switches the active character pack in-place and remembers it for the next launch.
+func switch_pack(pack_id: String) -> bool:
+	var next_pack: CharacterPack = CharacterPack.load_by_id(pack_id)
+	if next_pack == null:
+		return false
+	_pack = next_pack
+	_brain.set_pack(_pack)
+	_actor.set_pack(_pack)
+	_update_limits()
+	PingConfig.store("pack_id", _pack.id)
+	return true
 
 
 func _process(_delta: float) -> void:
@@ -290,28 +307,41 @@ func _refresh_history() -> void:
 
 
 func _open_menu() -> void:
-	var mode_name: String = AppSettings.MODE_NAMES[(PingConfig.mode + 1) % AppSettings.MODE_NAMES.size()]
 	var items: Array[Dictionary] = [
 		{"id": &"history", "text": "History"},
 		{"id": &"clear", "text": "Clear everything"},
-		{"id": &"mode", "text": "Switch to %s mode" % mode_name},
+	]
+	var discovered: Dictionary = CharacterPack.discover()
+	var pack_ids: Array = discovered.keys()
+	pack_ids.sort()
+	for candidate_id: Variant in pack_ids:
+		var candidate: CharacterPack = CharacterPack.load_dir(str(discovered[candidate_id]))
+		if not candidate.is_valid():
+			continue
+		var mark: String = "✓ " if candidate.id == _pack.id else "   "
+		items.append({
+			"id": StringName("pack:" + candidate.id),
+			"text": "%sCharacter: %s" % [mark, candidate.display_name],
+		})
+	items.append_array([
 		{"id": &"screen", "text": "Move to next screen"},
 		{"id": &"quit", "text": "Quit PingPal"},
-	]
+	])
 	var pointer: Vector2 = _stage.get_local_mouse_position()
 	_menu.open(items, pointer)
 	_menu.position = Vector2(_clamp_x(pointer.x, _menu.size.x), maxf(pointer.y - _menu.size.y, 2.0))
 
 
 func _on_menu_item(id: StringName) -> void:
+	var key: String = String(id)
+	if key.begins_with("pack:"):
+		switch_pack(key.substr(5))
+		return
 	match id:
 		&"history":
 			_open_history()
 		&"clear":
 			PingHub.clear()
-		&"mode":
-			PingConfig.store("mode", (PingConfig.mode + 1) % AppSettings.MODE_NAMES.size())
-			_overlay.apply()
 		&"screen":
 			_overlay.move_to_next_screen()
 		&"quit":

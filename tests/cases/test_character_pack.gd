@@ -29,7 +29,7 @@ func test_bundled_pack_loads() -> void:
 
 func test_every_bundled_pack_is_valid() -> void:
 	var found: Dictionary = CharacterPack.discover()
-	check(found.has("pip") and found.has("corgi"), "both bundled packs are discovered")
+	check(found.has("pip") and found.has("corgi") and found.has("corgi_desk"), "all bundled packs are discovered")
 	for pack_id: String in found:
 		var pack: CharacterPack = CharacterPack.load_dir(found[pack_id])
 		check(pack.is_valid(), "%s should be valid: %s" % [pack_id, ", ".join(pack.errors)])
@@ -37,6 +37,18 @@ func test_every_bundled_pack_is_valid() -> void:
 		for state: StringName in CharacterPack.REQUIRED_STATES:
 			check(pack.resolve(state) != &"", "%s resolves '%s'" % [pack_id, state])
 		check(not pack.breaks().is_empty(), "%s has at least one break animation" % pack_id)
+
+
+func test_corgi_desk_animations() -> void:
+	var pack: CharacterPack = CharacterPack.load_by_id("corgi_desk")
+	check(pack != null and pack.is_valid(), "corgi_desk loads")
+	if pack == null:
+		return
+	eq(pack.frame_size, Vector2i(89, 131), "frame size matches the sheet")
+	eq(pack.resolve(&"attention"), &"attention", "corgi_desk gets attention by raising its paw")
+	eq(pack.breaks(), [&"bone", &"sleep"] as Array[StringName], "its breaks are bone and sleep")
+	for animation: StringName in [&"idle", &"bone", &"sleep", &"attention"]:
+		eq(pack.frames.get_frame_count(animation), 4, "%s has 4 frames" % animation)
 
 
 func test_corgi_animations() -> void:

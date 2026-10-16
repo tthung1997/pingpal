@@ -68,9 +68,10 @@ Reused approach from Tiny Ages' `DesktopWindow` / `Skyline`:
 
 - Borderless, `transparent`, `always_on_top`, `unfocusable` (never steals keyboard focus), with
   `per_pixel_transparency/allowed` and a transparent clear color. Renderer: GL Compatibility.
-- **Strip** mode: window = full usable width x `strip_height`, docked to the bottom of the screen
-  (above the taskbar via `screen_get_usable_rect`). **Corner** mode: a smaller window in the
-  bottom-right. **Window** mode: ordinary decorated window for debugging.
+- **Strip:** the window is the full usable width x `strip_height`, docked to the bottom of the
+  screen (above the taskbar via `screen_get_usable_rect`). It is the only layout: the character can
+  be dragged to any spot along it, including either corner, so there is no separate corner or
+  windowed mode.
 - **Click-through.** `Window.mouse_passthrough_polygon` accepts *one* polygon. We compute the
   "skyline" of every interactive rectangle (character, tray, bubble/history/menu): per column, from
   the highest interactive pixel down to the lowest, run-length compressed. Disjoint areas become one

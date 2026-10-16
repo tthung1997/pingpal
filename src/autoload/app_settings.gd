@@ -5,19 +5,15 @@ extends Node
 ## Precedence: command-line flags > user://settings.cfg > defaults. Flags are never written back
 ## to the file, so `pingpal --port=9000` does not permanently change your port.
 ##
-## Flags: --port=N  --mode=strip|corner|window  --pack=ID  --scale=N  --token=SECRET
+## Flags: --port=N  --pack=ID  --scale=N  --token=SECRET
 ##        --no-always-on-top  --no-click-through
-
-enum Mode { STRIP, CORNER, WINDOW }
 
 const SETTINGS_PATH: String = "user://settings.cfg"
 const SECTION: String = "pingpal"
 const DEFAULT_PORT: int = 7464 # "PING" on a phone keypad
 const DEFAULT_PACK: String = "corgi"
-const MODE_NAMES: Array[String] = ["strip", "corner", "window"]
 
 var port: int = DEFAULT_PORT
-var mode: Mode = Mode.STRIP
 var pack_id: String = DEFAULT_PACK
 ## Whole-number magnification of the character art.
 var pixel_scale: int = 2
@@ -26,9 +22,8 @@ var click_through: bool = true
 var fps_cap: int = 30
 ## When set, MCP clients must send `Authorization: Bearer <token>`.
 var auth_token: String = ""
-## Overlay size in UI pixels: the strip's height, and the corner window's width.
+## Height of the full-width overlay strip, in UI pixels.
 var strip_height: int = 420
-var corner_width: int = 480
 ## Keeps the character this far from the window edge so it does not hide under screen corners.
 var edge_margin: int = 16
 
@@ -84,7 +79,7 @@ func _apply_flag(arg: String) -> void:
 		key = body.substr(0, equals)
 		value = body.substr(equals + 1)
 	match key:
-		"port", "mode", "pack", "scale", "token":
+		"port", "pack", "scale", "token":
 			_assign("auth_token" if key == "token" else "pixel_scale" if key == "scale" \
 				else "pack_id" if key == "pack" else key, value)
 		"screenshot":
@@ -112,12 +107,6 @@ func _assign(key: String, value: Variant) -> void:
 			var number: int = int(str(value)) if str(value).is_valid_int() else -1
 			if number >= 0 and number <= 65535:
 				port = number
-		"mode":
-			var index: int = MODE_NAMES.find(str(value).to_lower())
-			if index < 0 and value is int and value >= 0 and value < MODE_NAMES.size():
-				index = value
-			if index >= 0:
-				mode = index as Mode
 		"pack_id":
 			if str(value).is_valid_filename():
 				pack_id = str(value)

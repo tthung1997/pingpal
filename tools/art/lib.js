@@ -84,3 +84,19 @@ function blit(dst, src, ox, oy) {
     dst.d[d] = src.d[s]; dst.d[d + 1] = src.d[s + 1]; dst.d[d + 2] = src.d[s + 2]; dst.d[d + 3] = 255;
   }
 }
+
+var _SRC_ALPHA = 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
+function srcCrop(sx, sy, w, h) {
+  var b = new Buf(w, h);
+  for (var y = 0; y < h; y++) {
+    var row = SRC_ROWS[sy + y];
+    if (!row) continue;
+    for (var x = 0; x < w; x++) {
+      var ch = row.charAt(sx + x);
+      if (!ch || ch === '.') continue;
+      var idx = _SRC_ALPHA.indexOf(ch);
+      if (idx >= 0) b.px(x, y, SRC_PAL[idx]);
+    }
+  }
+  return b;
+}
