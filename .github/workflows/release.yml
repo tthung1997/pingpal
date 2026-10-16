@@ -1,0 +1,62 @@
+name: Release
+
+# Push a tag like v0.2.0 to build, test and publish a release. Pull requests and manual runs
+# (Actions > Release > Run workflow) do everything except publish, as a dry run.
+on:
+  push:
+    tags: ["v*"]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: windows-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Check the tag matches the project version
+        if: startsWith(github.ref, 'refs/tags/v')
+        env:
+          TAG: ${{ github.ref_name }}
+        run: |
+          $version = (Select-String -Path project.godot -Pattern '^config/version="(.+)"').Matches[0].Groups[1].Value
+          if ("v$version" -ne $env:TAG) {
+            throw "Tag $env:TAG does not match config/version $version in project.godot"
+          }
+
+      # The engine and the Windows export templates are about 200 MB once extracted.
+      - uses: actions/cache@v4
+        with:
+          path: |
+            ${{ runner.temp }}\godot-4.7.1
+            ~\AppData\Roaming\Godot\export_templates
+          key: godot-4.7.1-windows
+
+      - name: Install Godot
+        run: pwsh -File scripts/install-godot.ps1 -Version 4.7.1 -Dir "$env:RUNNER_TEMP\godot-4.7.1"
+
+      - name: Test
+        run: |
+          pwsh -File scripts/run-tests.ps1 *> test-output.txt
+          $code = $LASTEXITCODE
+          Get-Content test-output.txt | Select-Object -Last 15
+          exit $code
+
+      - name: Build
+        run: pwsh -File scripts/build-release.ps1
+
+      - name: Publish
+        if: startsWith(github.ref, 'refs/tags/v')
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ github.ref_name }}
+        run: |
+          $zip = Get-ChildItem build/PingPal-*-windows.zip | Select-Object -First 1
+          gh release create $env:TAG $zip.FullName "$($zip.FullName).sha256" `
+            --title "PingPal $($env:TAG.TrimStart('v'))" `
+            --notes-file .github/release-notes.md --generate-notes --verify-tag
