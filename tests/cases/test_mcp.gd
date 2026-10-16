@@ -42,7 +42,7 @@ func test_initialize_negotiates_and_creates_session() -> void:
 	eq((await protocol.handle_payload(old, {}))["result"]["protocolVersion"], McpProtocol.LATEST_VERSION, "unknown version -> latest")
 
 
-func test_tools_list_has_the_five_tools_with_schemas() -> void:
+func test_tools_list_has_the_four_tools_with_schemas() -> void:
 	var reply: Dictionary = await _protocol().handle_payload(_rpc(2, "tools/list"), {})
 	var names: Array = []
 	for tool_def: Dictionary in reply["result"]["tools"]:
@@ -50,7 +50,7 @@ func test_tools_list_has_the_five_tools_with_schemas() -> void:
 		eq(tool_def["inputSchema"]["type"], "object", "%s has an object schema" % tool_def["name"])
 		check(not str(tool_def["description"]).is_empty(), "%s has a description" % tool_def["name"])
 	names.sort()
-	eq(names, ["ask", "clear", "notify", "perform", "set_state"], "exactly the agreed tools")
+	eq(names, ["ask", "clear", "notify", "set_state"], "exactly the agreed tools")
 	check(JSON.stringify(reply) != "", "the list is JSON-serializable")
 
 
@@ -76,9 +76,6 @@ func test_tool_calls_drive_the_hub() -> void:
 	eq(JSON.parse_string(_text(reply["result"]))["status"], "working", "set_state reports the new status")
 	eq(hub.ambient(), &"working", "hub is working")
 
-	reply = await protocol.handle_payload(_rpc(6, "tools/call", {"name": "perform", "arguments": {"action": "dance"}}), ctx)
-	eq(reply["result"]["isError"], false, "perform succeeds")
-
 	reply = await protocol.handle_payload(_rpc(7, "tools/call", {"name": "clear", "arguments": {}}), ctx)
 	eq(reply["result"]["isError"], false, "clear succeeds")
 	eq(hub.ambient(), &"", "clear removed the caller's state")
@@ -92,7 +89,8 @@ func test_bad_arguments_are_tool_errors_not_protocol_errors() -> void:
 		{"name": "notify", "arguments": {"text": 5}},
 		{"name": "set_state", "arguments": {"status": "napping"}},
 		{"name": "ask", "arguments": {"question": "q", "choices": ["only one"]}},
-		{"name": "perform", "arguments": {"action": "fly", "seconds": 1}},
+		{"name": "notify", "arguments": {"text": "x", "priority": "whenever"}},
+		{"name": "perform", "arguments": {"action": "wave"}},
 		{"name": "nope", "arguments": {}},
 	]
 	for params: Dictionary in cases:
@@ -205,7 +203,7 @@ func test_http_handshake_and_tool_call() -> void:
 	eq(note["status"], 202, "notification -> 202 Accepted")
 
 	var list: Dictionary = await _send(port, _raw_post('{"jsonrpc":"2.0","id":2,"method":"tools/list"}', {"Mcp-Session-Id": session}))
-	eq(JSON.parse_string(list["body"])["result"]["tools"].size(), 5, "tools/list over HTTP")
+	eq(JSON.parse_string(list["body"])["result"]["tools"].size(), 4, "tools/list over HTTP")
 
 	var call: Dictionary = await _send(port, _raw_post(JSON.stringify(_rpc(3, "tools/call",
 		{"name": "notify", "arguments": {"text": "over the wire", "mood": "excited"}})), {"Mcp-Session-Id": session}))

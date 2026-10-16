@@ -19,10 +19,9 @@ func _run(brain: CharacterBrain, seconds: float, step: float = 0.1) -> Dictionar
 	return seen
 
 
-func test_idles_wanders_plays_on_its_own() -> void:
+func test_idles_and_wanders_on_its_own() -> void:
 	var seen: Dictionary = _run(_brain(), 300.0)
 	check(seen.has("WANDER"), "pet wanders when left alone")
-	check(seen.has("PLAY"), "pet plays when left alone")
 	check(seen.has("IDLE"), "pet idles")
 	check(seen.has("SLEEP"), "pet eventually naps (after sleep_after_seconds)")
 
@@ -67,22 +66,15 @@ func test_message_interrupts_and_releases() -> void:
 
 func test_sleeping_character_startles_awake_then_reacts() -> void:
 	var brain: CharacterBrain = _brain()
-	brain.perform(&"sleep")
-	eq(brain.mode, CharacterBrain.Mode.SLEEP, "sleep action sleeps")
+	var elapsed: float = 0.0
+	while brain.mode != CharacterBrain.Mode.SLEEP and elapsed < 600.0:
+		brain.update(0.1)
+		elapsed += 0.1
+	eq(brain.mode, CharacterBrain.Mode.SLEEP, "left alone long enough, it falls asleep")
 	brain.react(&"happy", 0.0)
 	eq(brain.anim_state, &"alert", "a sleeper is startled first")
 	_run(brain, 1.0)
 	eq(brain.anim_state, &"happy", "then shows the actual reaction")
-
-
-func test_actions_queue_behind_a_reaction() -> void:
-	var brain: CharacterBrain = _brain()
-	brain.react(&"happy", 1.0)
-	check(brain.perform(&"dance", 0.0), "dance is a known action")
-	eq(brain.anim_state, &"happy", "action waits for the running reaction")
-	_run(brain, 1.2)
-	eq(brain.anim_state, &"dance", "then plays")
-	check(not brain.perform(&"explode"), "unknown actions are rejected")
 
 
 func test_ambient_state_changes_behaviour() -> void:
@@ -91,10 +83,9 @@ func test_ambient_state_changes_behaviour() -> void:
 	eq(brain.anim_state, &"thinking", "idle while AIs are working looks like thinking")
 	var seen: Dictionary = _run(brain, 400.0)
 	check(not seen.has("SLEEP"), "it does not fall asleep while work is in progress")
-	check(not seen.has("PLAY"), "it does not play while work is in progress")
 	brain.set_ambient(&"needs_input")
 	var reacted: bool = false
-	for _i: int in 200:
+	for _i: int in 1200:
 		brain.update(0.1)
 		reacted = reacted or (brain.mode == CharacterBrain.Mode.REACT and brain.anim_state == &"alert")
 	check(reacted, "it periodically calls for attention when input is needed")

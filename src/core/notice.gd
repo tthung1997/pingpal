@@ -12,7 +12,7 @@ enum Kind { NOTIFY, DONE, NEEDS_INPUT, ERROR, ASK, SUMMARY }
 
 ## How each mood is acted out; the pack resolves these states to real animations.
 const MOOD_STATES: Dictionary = {
-	&"neutral": &"wave",
+	&"neutral": &"idle",
 	&"happy": &"happy",
 	&"excited": &"excited",
 	&"alert": &"alert",

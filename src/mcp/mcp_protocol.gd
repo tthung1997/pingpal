@@ -22,8 +22,7 @@ const MAX_SESSIONS: int = 256
 const INSTRUCTIONS: String = """PingPal is a small desktop character that shows the human what you are up to, so they don't have to keep this app open.
 - Call set_state(status="working") when you start a long task and set_state(status="done") when it finishes. Use "needs_input" or ask() only when you are really blocked on the human; "error" if something failed.
 - Use notify() for a brief, friendly one-liner (under ~100 characters). Don't narrate every step; messages from several AIs share one screen.
-- Pass a short, stable `source` (for example "Claude Code · api") if several agents run from the same app; otherwise your client name is used.
-- perform() makes the character wave, dance, jump and so on, for fun."""
+- Pass a short, stable `source` (for example "Claude Code · api") if several agents run from the same app; otherwise your client name is used."""
 
 var tools: McpTools
 ## session id -> {client_name, client_version, protocol_version}

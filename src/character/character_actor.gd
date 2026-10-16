@@ -1,7 +1,7 @@
 class_name CharacterActor
 extends Node2D
 ## Puts a CharacterPack and a CharacterBrain on screen: plays the animation the brain asks for,
-## flips to face the direction of travel and adds small procedural effects (hop, jump, spin) so
+## flips to face the direction of travel and adds small procedural effects (hop, jump) so
 ## even a pack with few animations feels lively.
 ##
 ## Origin is the character's feet, so `position` is simply where it stands.
@@ -10,7 +10,6 @@ const HOP_HEIGHT: float = 4.0
 const JUMP_HEIGHT: float = 11.0
 const HOP_SECONDS: float = 0.7
 const JUMP_PERIOD: float = 0.6
-const SPIN_PERIOD: float = 0.8
 
 var pack: CharacterPack
 var brain: CharacterBrain
@@ -59,10 +58,22 @@ func _process(delta: float) -> void:
 	_apply_effect()
 
 
-## Where the character occupies the screen, in the parent's coordinates.
+## Where the character occupies the screen right now, in the parent's coordinates. It follows the
+## visible pixels of the current frame (and any hop/jump), so empty parts of the frame never
+## swallow clicks meant for the windows behind.
 func hit_rect() -> Rect2:
-	var size: Vector2 = Vector2(pack.frame_size) * scale
-	return Rect2(position - pack.anchor * scale, size)
+	var used: Rect2i = pack.used_rect(_sprite.animation, _sprite.frame)
+	var left: float = used.position.x - pack.anchor.x
+	var right: float = used.end.x - pack.anchor.x
+	if brain.facing < 0:
+		var flipped: float = -left
+		left = -right
+		right = flipped
+	var top: float = used.position.y - pack.anchor.y
+	var bottom: float = used.end.y - pack.anchor.y
+	var lift: float = JUMP_HEIGHT if brain.effect == &"jump" else (HOP_HEIGHT if brain.effect == &"hop" else 0.0)
+	var local: Rect2 = Rect2(left, top - lift, right - left, bottom - top + lift)
+	return Rect2(position + local.position * scale, local.size * scale)
 
 
 ## Top of the head in the parent's coordinates.
@@ -80,14 +91,11 @@ func _play(state: StringName) -> void:
 
 func _apply_effect() -> void:
 	var lift: float = 0.0
-	var squeeze: float = 1.0
 	match brain.effect:
 		&"hop":
 			if _effect_time < HOP_SECONDS:
 				lift = absf(sin(_effect_time / (HOP_SECONDS * 0.5) * PI)) * HOP_HEIGHT
 		&"jump":
 			lift = absf(sin(_effect_time / JUMP_PERIOD * PI)) * JUMP_HEIGHT
-		&"spin":
-			squeeze = cos(_effect_time / SPIN_PERIOD * TAU * 2.0)
 	_sprite.position.y = -lift
-	_sprite.scale.x = float(brain.facing) * (squeeze if absf(squeeze) > 0.12 else 0.12)
+	_sprite.scale.x = float(brain.facing)

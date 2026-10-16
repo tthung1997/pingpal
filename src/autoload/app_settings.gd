@@ -13,14 +13,14 @@ enum Mode { STRIP, CORNER, WINDOW }
 const SETTINGS_PATH: String = "user://settings.cfg"
 const SECTION: String = "pingpal"
 const DEFAULT_PORT: int = 7464 # "PING" on a phone keypad
-const DEFAULT_PACK: String = "pip"
+const DEFAULT_PACK: String = "corgi"
 const MODE_NAMES: Array[String] = ["strip", "corner", "window"]
 
 var port: int = DEFAULT_PORT
 var mode: Mode = Mode.STRIP
 var pack_id: String = DEFAULT_PACK
 ## Whole-number magnification of the character art.
-var pixel_scale: int = 3
+var pixel_scale: int = 2
 var always_on_top: bool = true
 var click_through: bool = true
 var fps_cap: int = 30
@@ -44,6 +44,11 @@ var _stored: Dictionary = {}
 var screenshot_path: String = ""
 var screenshot_delay: float = 4.0
 var screenshot_history: bool = false
+## `--preview=alert` holds one animation (any state the pack maps) instead of running normally.
+var preview: String = ""
+## `--screenshot-frames=N --screenshot-interval=S` saves N shots (path_00.png ...) to inspect an animation.
+var screenshot_count: int = 1
+var screenshot_interval: float = 0.1
 
 
 func _ready() -> void:
@@ -89,6 +94,12 @@ func _apply_flag(arg: String) -> void:
 			screenshot_path = value
 		"screenshot-history":
 			screenshot_history = true
+		"preview":
+			preview = value
+		"screenshot-frames":
+			screenshot_count = clampi(int(value), 1, 120) if value.is_valid_int() else screenshot_count
+		"screenshot-interval":
+			screenshot_interval = clampf(float(value), 0.02, 5.0) if value.is_valid_float() else screenshot_interval
 		"screenshot-delay":
 			screenshot_delay = clampf(float(value), 0.5, 60.0) if value.is_valid_float() else screenshot_delay
 		"no-always-on-top":

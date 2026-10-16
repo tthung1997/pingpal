@@ -15,7 +15,6 @@ signal notice_hidden(notice: Notice)
 signal source_changed(source: SourceInfo)
 signal ambient_changed(ambient: StringName)
 signal history_changed
-signal action_requested(action: StringName, seconds: float, source: SourceInfo)
 signal cleared(source_key: String)
 
 const MAX_QUEUE: int = 24
@@ -112,13 +111,6 @@ func set_state(source_name: String, status: StringName, text: String = "") -> Di
 			SourceInfo.Status.ERROR:
 				_post(source, text if not text.is_empty() else "Something went wrong.", &"error", Notice.Priority.HIGH, Notice.Kind.ERROR)
 	return {"source": source.display_name, "status": status, "previous": previous, "changed": changed}
-
-
-func perform(source_name: String, action: StringName, seconds: float = 0.0) -> Dictionary:
-	var source: SourceInfo = registry.resolve(source_name)
-	source.last_seen = _clock
-	action_requested.emit(action, seconds, source)
-	return {"source": source.display_name, "action": action, "accepted": true}
 
 
 ## Shows a question and waits (this is a coroutine) for the user to pick a choice, up to
