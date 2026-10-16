@@ -1,0 +1,40 @@
+class_name SourceInfo
+extends RefCounted
+## One AI client/agent that talks to PingPal, with its look (color, glyph, accessory) and its
+## current status. Looks are stable per source so the user learns "orange hat = Claude".
+
+enum Status { IDLE, WORKING, DONE, NEEDS_INPUT, ERROR }
+
+const STATUS_NAMES: Dictionary = {
+	Status.IDLE: &"idle",
+	Status.WORKING: &"working",
+	Status.DONE: &"done",
+	Status.NEEDS_INPUT: &"needs_input",
+	Status.ERROR: &"error",
+}
+
+var key: String = ""
+var display_name: String = ""
+## Shared by related sources (every "Claude Code · repo" is family "claude") so they share a color.
+var family: String = ""
+var color: Color = Color.WHITE
+var glyph: String = "?"
+var accessory: StringName = &"cap"
+
+var status: Status = Status.IDLE
+var status_text: String = ""
+## Manager clock time (seconds) of the last status change and of the last message of any kind.
+var status_since: float = 0.0
+var last_seen: float = 0.0
+var notice_count: int = 0
+
+
+func status_name() -> StringName:
+	return STATUS_NAMES[status]
+
+
+static func status_from_name(value: StringName) -> int:
+	for status_id: int in STATUS_NAMES:
+		if STATUS_NAMES[status_id] == value:
+			return status_id
+	return -1
