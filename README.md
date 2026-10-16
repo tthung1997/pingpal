@@ -14,7 +14,14 @@ five terminals and just glance at the character.
 
 Built with Godot 4.7 (GDScript, no addons). See [docs/DESIGN.md](docs/DESIGN.md) for how it works.
 
-## Run it
+## Download
+
+Grab `PingPal-<version>-windows.zip` from the [latest release](https://github.com/tthung1997/pingpal/releases/latest),
+unzip it anywhere and run `PingPal.exe` (Windows 10/11, 64-bit; no installer). The build isn't code-signed, so
+SmartScreen may warn on first run: choose **More info**, then **Run anyway**. Each release also has a `.sha256`
+file for the zip.
+
+## Run it from source
 
 You need [Godot 4.7](https://godotengine.org/download) (standard build, not .NET).
 
@@ -50,8 +57,9 @@ It listens on loopback only. Check it from a terminal:
 
 ### Options
 
-Command-line flags (after `--` when launching through Godot) override `user://settings.cfg`
-(`%APPDATA%\PingPal\settings.cfg` on Windows). Flags are never saved.
+Command-line flags override `user://settings.cfg` (`%APPDATA%\PingPal\settings.cfg` on Windows). Flags are
+never saved. With the released exe pass them directly (`PingPal.exe --port=9000`); from source they go after
+`--`:
 
 ```
 godot --path . -- --port=9000 --scale=4 --pack=pip --token=secret
@@ -233,6 +241,24 @@ the visible pixels of the current frame, so transparent parts of a large frame n
 Covers pack loading, the idle state machine, the notification manager (priority, batching, read state,
 status), the MCP protocol, the HTTP server over real loopback sockets, and the main scene driven with
 synthetic clicks. `scripts/test-mcp.*` check a *running* app from outside.
+
+## Releasing
+
+A release is a git tag. Bump `config/version` in `project.godot` (the only place; the exe's file and product
+version follow it), merge that, then tag the merge commit on `main`:
+
+```powershell
+git tag v0.1.0
+git push origin v0.1.0
+```
+
+`.github/workflows/release.yml` installs Godot, runs the tests, builds the Windows zip and publishes a GitHub
+Release with the zip, its SHA-256 and generated notes (the install text is `.github/release-notes.md`). It
+refuses a tag that doesn't match `config/version`. Pull requests run the same workflow without publishing.
+
+To build locally: `./scripts/install-godot.ps1` (engine and export templates, checksum-verified; sets `GODOT` in
+CI), then `./scripts/build-release.ps1` writes `build/PingPal-<version>-windows.zip`. `tools/art/make_ico.py`
+rebuilds `icon.ico` from `icon.png`.
 
 ## Troubleshooting
 

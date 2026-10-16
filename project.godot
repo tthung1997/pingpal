@@ -19,6 +19,8 @@ config/use_custom_user_dir=true
 config/custom_user_dir_name="PingPal"
 config/features=PackedStringArray("4.7", "GL Compatibility")
 config/icon="res://icon.png"
+boot_splash/show_image=false
+boot_splash/bg_color=Color(0, 0, 0, 0)
 
 [autoload]
 
