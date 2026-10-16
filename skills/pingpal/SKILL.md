@@ -1,6 +1,6 @@
 ---
 name: pingpal
-description: Keep the user informed through the PingPal desktop character while you work. Report when work finishes or fails, when a longer job starts, and when you are blocked and need the user to come back to this session. Use whenever the `pingpal` MCP server (tools `notify`, `set_state`, `clear`) is available and you do real work (running commands, editing files, investigating) or need the user's input.
+description: Keep the user informed through the PingPal desktop character while you work. On every request, send `working` first and `done` or `error` when you finish, and flag when you are blocked and need the user to come back to this session. Use on every request whenever the `pingpal` MCP server (tools `notify`, `set_state`, `clear`) is available, however small the request is.
 ---
 
 # Reporting to PingPal
@@ -23,8 +23,8 @@ color, tray chip and status.
 
 | Moment | Call |
 | --- | --- |
-| You start a longer job (more than about a minute) that the user would want to see running | `set_state(source, status="working", text="<what you are doing>")` |
-| You finish real work, however short | `set_state(source, status="done", text="<one-line result>")` |
+| Your first step on every request, before anything else (you cannot know how long it will take) | `set_state(source, status="working", text="<what you are doing>")` |
+| You finish, however short | `set_state(source, status="done", text="<one-line result>")` |
 | You failed and cannot continue | `set_state(source, status="error", text="<what failed>")` |
 | You are blocked and need the user (a decision, approval, missing information) | `set_state(source, status="needs_input", text="<what you need>")`, then see below |
 | The user answered and you resume | `set_state(source, status="working", text="<what you are doing>")` |
@@ -42,18 +42,20 @@ color, tray chip and status.
 
 ## Rules
 
-- **Always report the end of real work.** If you ran commands, edited files or investigated, send
-  `done`, `error` or `needs_input` when you stop, however short it was: the user may have looked away.
-  Skip PingPal entirely for plain chat answers where you did no work.
-- **`working` is for longer jobs.** For a short task, skip it and send only `done`. If you did send
-  `working`, always end with `done`, `error` or `needs_input`; never leave `working` hanging.
+- **Report every request, however small.** You cannot know in advance whether a task will take seconds or
+  an hour, and the user may have looked away either way. So there is no threshold and no exemption,
+  not even for a plain chat answer: send `working` first and `done` or `error` last.
+- **The first call comes first.** If the PingPal tools are deferred (listed by name only), load them with
+  `tool_search_tool` (pattern `pingpal`) and then send `working` immediately, before you start the work.
+- **Never leave `working` hanging.** Always end with `done`, `error` or `needs_input`.
+- **The user's own instructions win**, for example if they ask you to stay quiet on small requests.
 - **One announcement per event.** `done`, `error` and `needs_input` already pop up a bubble with your
   `text`. Do not also call `notify` for the same thing.
 - **Short plain text.** One line, ideally under 100 characters (the limit is 280). No markdown.
 - **Nothing sensitive.** No secrets, tokens, private code or personal data: the text is shown on screen
   and kept in a history.
-- **Few calls.** A short task needs one (`done`); a long one two to four. Do not narrate steps or
-  notify per file or per test.
+- **Few calls.** Every request needs two (`working` first, `done` last); a long one adds a repeat of
+  `working` now and then. Do not narrate steps or notify per file or per test.
 - **Long tasks.** A `working` chip disappears after 30 minutes without any call from this session. If
   you will run longer, repeat `set_state(working)` with fresh text about every 15 minutes.
 - **Priority.** Leave `notify` at its default. Use `low` for chatty extras (they are batched), `high`

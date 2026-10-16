@@ -134,6 +134,11 @@ func test_the_agent_skill_matches_the_real_tools_and_limits() -> void:
 		check(guide.contains("`%s`" % tool_name), "so does the install guide")
 	for status: String in McpTools.STATUSES:
 		check(skill.contains("\"%s\"" % status) or skill.contains("`%s`" % status), "the skill covers status %s" % status)
+	check(guide.contains("tool_search_tool"), "the guide handles apps that defer MCP tools")
+	check(guide.contains("~/.copilot/skills/") and guide.contains("~/.copilot/copilot-instructions.md"), "and lists the Copilot folders")
+	check(guide.contains("The `pingpal` skill has fuller guidance if needed."), "the snippet points to the skill")
+	check(guide.contains("every request") and skill.contains("every request"), "both say to report every request, with no job-length judgement")
+	check(not skill.contains("longer job") and not guide.contains("longer job"), "and neither asks the AI to judge how long a job is")
 	for text: String in [skill, guide]:
 		check(not text.contains("ask("), "neither mentions the removed ask tool")
 		check(not text.contains("`ask`"), "in any form")
