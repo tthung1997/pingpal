@@ -42,7 +42,7 @@ func test_initialize_negotiates_and_creates_session() -> void:
 	eq((await protocol.handle_payload(old, {}))["result"]["protocolVersion"], McpProtocol.LATEST_VERSION, "unknown version -> latest")
 
 
-func test_tools_list_has_the_four_tools_with_schemas() -> void:
+func test_tools_list_has_the_three_tools_with_schemas() -> void:
 	var reply: Dictionary = await _protocol().handle_payload(_rpc(2, "tools/list"), {})
 	var names: Array = []
 	for tool_def: Dictionary in reply["result"]["tools"]:
@@ -50,7 +50,7 @@ func test_tools_list_has_the_four_tools_with_schemas() -> void:
 		eq(tool_def["inputSchema"]["type"], "object", "%s has an object schema" % tool_def["name"])
 		check(not str(tool_def["description"]).is_empty(), "%s has a description" % tool_def["name"])
 	names.sort()
-	eq(names, ["ask", "clear", "notify", "set_state"], "exactly the agreed tools")
+	eq(names, ["clear", "notify", "set_state"], "exactly the agreed tools")
 	check(JSON.stringify(reply) != "", "the list is JSON-serializable")
 
 
@@ -87,7 +87,6 @@ func test_source_is_required_on_every_tool() -> void:
 	var valid: Array[Dictionary] = [
 		{"name": "notify", "arguments": {"text": "x"}},
 		{"name": "set_state", "arguments": {"status": "working"}},
-		{"name": "ask", "arguments": {"question": "q"}},
 		{"name": "clear", "arguments": {}},
 	]
 	for params: Dictionary in valid:
@@ -124,7 +123,7 @@ func test_bad_arguments_are_tool_errors_not_protocol_errors() -> void:
 		{"name": "notify", "arguments": {"source": "T"}},
 		{"name": "notify", "arguments": {"source": "T", "text": 5}},
 		{"name": "set_state", "arguments": {"source": "T", "status": "napping"}},
-		{"name": "ask", "arguments": {"source": "T", "question": "q", "choices": ["only one"]}},
+		{"name": "ask", "arguments": {"source": "T", "question": "q"}},
 		{"name": "notify", "arguments": {"source": "T", "text": "x", "priority": "whenever"}},
 		{"name": "notify", "arguments": {"source": "x".repeat(81), "text": "x"}},
 		{"name": "perform", "arguments": {"source": "T", "action": "wave"}},
@@ -241,7 +240,7 @@ func test_http_handshake_and_tool_call() -> void:
 	eq(note["status"], 202, "notification -> 202 Accepted")
 
 	var list: Dictionary = await _send(port, _raw_post('{"jsonrpc":"2.0","id":2,"method":"tools/list"}', {"Mcp-Session-Id": session}))
-	eq(JSON.parse_string(list["body"])["result"]["tools"].size(), 4, "tools/list over HTTP")
+	eq(JSON.parse_string(list["body"])["result"]["tools"].size(), 3, "tools/list over HTTP")
 
 	var call: Dictionary = await _send(port, _raw_post(JSON.stringify(_rpc(3, "tools/call",
 		{"name": "notify", "arguments": {"source": "Wire Test", "text": "over the wire"}})), {"Mcp-Session-Id": session}))
@@ -309,36 +308,13 @@ func test_http_bearer_token() -> void:
 	_stop(env)
 
 
-func test_http_ask_blocks_until_the_human_answers() -> void:
+func test_the_retired_ask_tool_is_gone_and_never_blocks() -> void:
 	var env: Dictionary = _start()
-	var hub: NotificationManager = env["hub"]
-	var peer: StreamPeerTCP = await _connect(env["port"])
-	var call: Dictionary = _rpc(1, "tools/call", {"name": "ask", "arguments": {"source": "Claude", "question": "Deploy?", "choices": ["Ship", "Wait"]}})
-	peer.put_data(_raw_post(JSON.stringify(call)).to_utf8_buffer())
-	await wait_frames(10)
-	eq(hub.pending_asks().size(), 1, "the question reached the screen")
-	# Meanwhile other clients are still served.
-	eq((await _send(env["port"], _raw_post('{"jsonrpc":"2.0","id":2,"method":"ping"}')))["status"], 200, "server stays responsive while a question is open")
-	hub.answer_ask(hub.pending_asks()[0].id, 0)
-	var response: Dictionary = await _read_response(peer)
-	eq(response["status"], 200, "the held request completes")
-	var result: Dictionary = JSON.parse_string(JSON.parse_string(response["body"])["result"]["content"][0]["text"])
-	eq(result["choice"], "Ship", "with the human's choice")
-	peer.disconnect_from_host()
-	_stop(env)
-
-
-func test_http_ask_is_withdrawn_when_the_client_hangs_up() -> void:
-	var env: Dictionary = _start()
-	var hub: NotificationManager = env["hub"]
-	var server: McpHttpServer = env["server"]
-	server.connection_closed.connect(hub.cancel_asks_owned_by)
-	var peer: StreamPeerTCP = await _connect(env["port"])
 	var call: Dictionary = _rpc(1, "tools/call", {"name": "ask", "arguments": {"source": "Claude", "question": "Deploy?"}})
-	peer.put_data(_raw_post(JSON.stringify(call)).to_utf8_buffer())
-	await wait_frames(10)
-	eq(hub.pending_asks().size(), 1, "question is up")
-	peer.disconnect_from_host()
-	await wait_frames(20)
-	eq(hub.pending_asks().size(), 0, "hanging up withdraws it")
+	var response: Dictionary = await _send(env["port"], _raw_post(JSON.stringify(call)))
+	eq(response["status"], 200, "an old client calling ask gets an answer straight away")
+	var result: Dictionary = JSON.parse_string(response["body"])["result"]
+	eq(result["isError"], true, "which says the tool does not exist")
+	check(str(result["content"][0]["text"]).contains("Unknown tool"), "with a readable reason")
+	eq(env["hub"].history.size(), 0, "and nothing reaches the screen")
 	_stop(env)

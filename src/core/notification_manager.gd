@@ -24,13 +24,11 @@ const MAX_TEXT_LENGTH: int = 280
 const BATCH_MIN: int = 3
 const GAP_SECONDS: float = 0.4
 const DEDUP_SECONDS: float = 4.0
-const ASK_BUBBLE_SECONDS: float = 12.0
-const DEFAULT_ASK_TIMEOUT: float = 45.0
-## Done/error chips fade on their own; working/needs_input only go stale after a long silence.
-const DONE_FADE_SECONDS: float = 90.0
-const ERROR_FADE_SECONDS: float = 600.0
+## Done, error and needs_input chips stay until the user opens the history (or the session reports a
+## new status), however long they were away. A working chip has nothing the user can acknowledge, so
+## it goes stale once its session has been silent this long, which keeps a crashed agent from
+## spinning forever while a session that keeps reporting keeps its chip.
 const WORKING_STALE_SECONDS: float = 1800.0
-const NEEDS_INPUT_STALE_SECONDS: float = 3600.0
 
 var registry: SourceRegistry = SourceRegistry.new()
 ## Newest last. Includes notices that were folded into a summary.
@@ -39,7 +37,6 @@ var history: Array[Notice] = []
 var current: Notice = null
 
 var _queue: Array[Notice] = []
-var _pending_asks: Dictionary = {}
 var _recent: Dictionary = {}
 var _clock: float = 0.0
 var _current_left: float = 0.0
@@ -59,18 +56,11 @@ func queue_size() -> int:
 	return _queue.size()
 
 
-func pending_asks() -> Array[Notice]:
-	var result: Array[Notice] = []
-	for ask_id: Variant in _pending_asks:
-		result.append(_pending_asks[ask_id])
-	return result
-
-
-## True while the user still has something to check: a question waiting for an answer, a message
-## that was shown but not yet clicked, opened in the history or answered, or more on the way. The
-## character keeps its attention animation for exactly this long.
+## True while the user still has something to check: a message that was shown but not yet clicked
+## or opened in the history, or more on the way. The character keeps its attention animation for
+## exactly this long.
 func needs_attention() -> bool:
-	if not _pending_asks.is_empty() or not _queue.is_empty():
+	if not _queue.is_empty():
 		return true
 	for notice: Notice in history:
 		if notice.seen and not notice.read:
@@ -126,47 +116,7 @@ func set_state(source_name: String, status: StringName, text: String = "") -> Di
 	return {"source": source.display_name, "status": status, "previous": previous, "changed": changed}
 
 
-## Shows a question and waits (this is a coroutine) for the user to pick a choice, up to
-## `timeout` seconds. `owner` ties the question to a client connection so it can be withdrawn
-## if the client hangs up.
-func ask(source_name: String, question: String, choices: PackedStringArray,
-		timeout: float = DEFAULT_ASK_TIMEOUT, owner: int = 0) -> Dictionary:
-	var source: SourceInfo = registry.resolve(source_name)
-	var notice: Notice = _make_notice(source, question, Notice.Priority.HIGH, Notice.Kind.ASK)
-	notice.choices = choices
-	notice.owner = owner
-	notice.deadline = _clock + clampf(timeout, 1.0, 600.0)
-	_pending_asks[notice.id] = notice
-	_apply_status(source, SourceInfo.Status.NEEDS_INPUT, notice.text)
-	_enqueue(notice)
-	return await notice.resolved
-
-
-## The user picked a choice on a question's bubble.
-func answer_ask(ask_id: int, index: int) -> bool:
-	var notice: Notice = _pending_asks.get(ask_id)
-	if notice == null or index < 0 or index >= notice.choices.size():
-		return false
-	_resolve_ask(notice, {"answered": true, "choice": notice.choices[index], "index": index})
-	return true
-
-
-## Re-shows unanswered questions whose bubble already timed out.
-func reopen_asks() -> void:
-	for notice: Notice in pending_asks():
-		if notice != current and not _queue.has(notice):
-			_queue.push_front(notice)
-	_gap_left = 0.0
-
-
-func cancel_asks_owned_by(owner: int) -> void:
-	for notice: Notice in pending_asks():
-		if notice.owner == owner:
-			_resolve_ask(notice, {"answered": false, "reason": "cancelled"})
-
-
-## The user waved a bubble away by clicking it, which counts as reading it. Questions stay
-## answerable from the history panel.
+## The user waved a bubble away by clicking it, which counts as reading it.
 func dismiss_current() -> void:
 	if current != null:
 		_set_read(current)
@@ -174,11 +124,12 @@ func dismiss_current() -> void:
 		read_state_changed.emit()
 
 
-## The user glanced at the character: finished/failed chips have done their job, and every message
-## shown so far counts as read.
+## The user glanced at the character: finished, failed and waiting-for-you chips have done their
+## job (the user knows and will go to the session), and every message shown so far counts as read.
 func acknowledge() -> void:
 	for source: SourceInfo in registry.all():
-		if source.status == SourceInfo.Status.DONE or source.status == SourceInfo.Status.ERROR:
+		if source.status == SourceInfo.Status.DONE or source.status == SourceInfo.Status.ERROR \
+				or source.status == SourceInfo.Status.NEEDS_INPUT:
 			_apply_status(source, SourceInfo.Status.IDLE, "")
 	for notice: Notice in history:
 		if notice.seen:
@@ -207,9 +158,6 @@ func clear(source_name: String = "") -> Dictionary:
 		if key.is_empty() or notice.source.key == key:
 			_queue.erase(notice)
 			removed += 1
-	for notice: Notice in pending_asks():
-		if key.is_empty() or notice.source.key == key:
-			_resolve_ask(notice, {"answered": false, "reason": "cleared"})
 	if current != null and (key.is_empty() or current.source.key == key):
 		_hide_current()
 	for source: SourceInfo in registry.all():
@@ -225,9 +173,6 @@ func clear(source_name: String = "") -> Dictionary:
 func advance(delta: float) -> void:
 	_clock += delta
 	_expire()
-	for notice: Notice in pending_asks():
-		if _clock >= notice.deadline:
-			_resolve_ask(notice, {"answered": false, "reason": "timeout"})
 	if current != null:
 		_current_left -= delta
 		if _current_left <= 0.0:
@@ -292,14 +237,7 @@ func _enqueue(notice: Notice) -> void:
 
 func _trim_queue() -> void:
 	while _queue.size() > MAX_QUEUE:
-		var victim_index: int = -1
-		for index: int in range(_queue.size() - 1, -1, -1):
-			if not _queue[index].is_ask():
-				victim_index = index
-				break
-		if victim_index < 0:
-			return
-		_queue.remove_at(victim_index)
+		_queue.pop_back()
 
 
 ## Urgent news cuts in. The interrupted notice goes back in the queue if it had barely started.
@@ -307,7 +245,7 @@ func _preempt() -> void:
 	var interrupted: Notice = current
 	var barely_shown: bool = _clock - interrupted.shown_clock < 1.0
 	_hide_current()
-	if barely_shown and not interrupted.is_ask():
+	if barely_shown:
 		_queue.push_front(interrupted)
 	_gap_left = 0.0
 
@@ -361,7 +299,7 @@ func _show(notice: Notice) -> void:
 	notice.seen = true
 	for item: Notice in notice.batched:
 		item.seen = true
-	_current_left = ASK_BUBBLE_SECONDS if notice.is_ask() else duration_for(notice, _queue.size())
+	_current_left = duration_for(notice, _queue.size())
 	history_changed.emit()
 	notice_shown.emit(notice)
 
@@ -386,58 +324,17 @@ static func duration_for(notice: Notice, backlog: int) -> float:
 	return maxf(seconds, 1.6)
 
 
-func _resolve_ask(notice: Notice, result: Dictionary) -> void:
-	if not _pending_asks.has(notice.id):
-		return
-	_pending_asks.erase(notice.id)
-	notice.answered = bool(result.get("answered", false))
-	if notice.answered:
-		_set_read(notice)
-	_queue.erase(notice)
-	var source: SourceInfo = notice.source
-	var still_waiting: bool = false
-	for other: Notice in pending_asks():
-		still_waiting = still_waiting or other.source == source
-	if source.status == SourceInfo.Status.NEEDS_INPUT and not still_waiting:
-		var next_status: SourceInfo.Status = SourceInfo.Status.WORKING if notice.answered else SourceInfo.Status.IDLE
-		_apply_status(source, next_status, "")
-	if current == notice:
-		_hide_current()
-	history_changed.emit()
-	read_state_changed.emit()
-	notice.resolved.emit(result)
-
-
 func _apply_status(source: SourceInfo, status: SourceInfo.Status, text: String) -> void:
 	source.status = status
 	source.status_text = text
-	source.status_since = _clock
 	source.last_seen = _clock
 	source_changed.emit(source)
 
 
 func _expire() -> void:
 	for source: SourceInfo in registry.all():
-		var age: float = _clock - source.status_since
-		var expired: bool = false
-		match source.status:
-			SourceInfo.Status.DONE:
-				expired = age > DONE_FADE_SECONDS
-			SourceInfo.Status.ERROR:
-				expired = age > ERROR_FADE_SECONDS
-			SourceInfo.Status.WORKING:
-				expired = age > WORKING_STALE_SECONDS
-			SourceInfo.Status.NEEDS_INPUT:
-				expired = age > NEEDS_INPUT_STALE_SECONDS and not _has_pending_ask(source)
-		if expired:
+		if source.status == SourceInfo.Status.WORKING and _clock - source.last_seen > WORKING_STALE_SECONDS:
 			_apply_status(source, SourceInfo.Status.IDLE, "")
-
-
-func _has_pending_ask(source: SourceInfo) -> bool:
-	for notice: Notice in pending_asks():
-		if notice.source == source:
-			return true
-	return false
 
 
 static func _status_rank(status: SourceInfo.Status) -> int:

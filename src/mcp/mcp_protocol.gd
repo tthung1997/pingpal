@@ -20,7 +20,7 @@ const ERR_INTERNAL: int = -32603
 const MAX_SESSIONS: int = 256
 
 const INSTRUCTIONS: String = """PingPal is a small desktop character that shows the human what you are up to, so they don't have to keep this app open.
-- Call set_state(status="working") when you start a long task and set_state(status="done") when it finishes. Use "needs_input" or ask() only when you are really blocked on the human; "error" if something failed.
+- Call set_state(status="working") when you start a long task and set_state(status="done") when it finishes. If you are blocked and the human has to answer in your session, call set_state(status="needs_input", text="<what you need>") and then stop; they will open your session to reply. Use "error" if something failed.
 - Use notify() for a brief, friendly one-liner (under ~100 characters). Don't narrate every step; messages from several AIs share one screen.
 - Every tool call needs a `source`: a name that identifies this session to the human (up to 80 characters). Use your session's title if you know it, otherwise describe the task or repo, for example "Fix login redirect". Each distinct name is its own entry (color, tray chip, status), so use exactly the same name on every call."""
 
@@ -35,18 +35,18 @@ func _init(p_tools: McpTools = null) -> void:
 
 ## Handles one parsed JSON-RPC payload (a message or a batch). Returns the response to send
 ## (Dictionary or Array), or null when there is nothing to send (notifications / responses).
-## `ctx` carries {session_id, conn_id}; on `initialize` it gains `new_session_id`.
+## `ctx` carries {session_id}; on `initialize` it gains `new_session_id`.
 func handle_payload(payload: Variant, ctx: Dictionary) -> Variant:
 	if payload is Array:
 		if payload.is_empty():
 			return _error(null, ERR_INVALID_REQUEST, "Empty batch")
 		var replies: Array = []
 		for message: Variant in payload:
-			var reply: Variant = await _handle_message(message, ctx)
+			var reply: Variant = _handle_message(message, ctx)
 			if reply != null:
 				replies.append(reply)
 		return replies if not replies.is_empty() else null
-	return await _handle_message(payload, ctx)
+	return _handle_message(payload, ctx)
 
 
 ## True for payloads that are only notifications/responses (the HTTP layer answers 202).
@@ -88,12 +88,12 @@ func _handle_message(message: Variant, ctx: Dictionary) -> Variant:
 		params = {}
 	if not params is Dictionary:
 		return _error(request["id"], ERR_INVALID_PARAMS, "params must be an object")
-	return await _dispatch(request["id"], method, params, ctx)
+	return _dispatch(request["id"], method, params, ctx)
 
 
 func _handle_notification(_method: String, _params: Variant, _ctx: Dictionary) -> void:
-	# notifications/initialized and notifications/cancelled need no action: tool calls are short,
-	# and an abandoned `ask` is withdrawn when its connection closes.
+	# notifications/initialized and notifications/cancelled need no action: every tool call
+	# is answered immediately.
 	pass
 
 
@@ -114,7 +114,7 @@ func _dispatch(id: Variant, method: String, params: Dictionary, ctx: Dictionary)
 				arguments = {}
 			if not arguments is Dictionary:
 				return _error(id, ERR_INVALID_PARAMS, "arguments must be an object")
-			var result: Dictionary = await tools.call_tool(tool_name, arguments, ctx)
+			var result: Dictionary = tools.call_tool(tool_name, arguments)
 			return _result(id, result)
 		"resources/list":
 			return _result(id, {"resources": []})

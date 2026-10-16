@@ -16,10 +16,6 @@ func _drain(hub: NotificationManager, seconds: float) -> Array[Notice]:
 	return shown
 
 
-func _ask(hub: NotificationManager, out: Dictionary, source: String = "claude", timeout: float = 45.0) -> void:
-	out["result"] = await hub.ask(source, "Ship it?", PackedStringArray(["Yes", "No"]), timeout, 7)
-
-
 func test_attention_lasts_until_the_user_checks_the_message() -> void:
 	var hub: NotificationManager = _hub()
 	check(not hub.needs_attention(), "nothing to check at first")
@@ -59,29 +55,28 @@ func test_reading_a_summary_reads_everything_folded_into_it() -> void:
 	check(not clicked.needs_attention(), "clicking the summary reads each notice folded into it")
 
 
-func test_a_question_keeps_attention_until_answered() -> void:
+func test_needs_input_keeps_attention_until_the_user_checks_it() -> void:
 	var hub: NotificationManager = _hub()
-	var out: Dictionary = {}
-	_ask(hub, out)
-	hub.advance(0.5)
-	hub.advance(NotificationManager.ASK_BUBBLE_SECONDS + 1.0)
-	check(hub.current == null and hub.needs_attention(), "a pending question needs attention after its bubble is gone")
-	hub.reopen_asks()
-	hub.advance(0.5)
-	hub.answer_ask(hub.current.id, 0)
-	check(not hub.needs_attention(), "answering it settles the matter")
-
-
-func test_an_unanswered_question_that_times_out_stays_unread() -> void:
-	var hub: NotificationManager = _hub()
-	var out: Dictionary = {}
-	_ask(hub, out, "claude", 30.0)
-	hub.advance(0.5)
-	hub.advance(40.0)
-	eq(out["result"]["reason"], "timeout", "the question timed out")
-	check(hub.needs_attention(), "the user never saw an answer prompt resolve, so it is still unread")
+	hub.set_state("a", &"needs_input", "Which branch should I use?")
+	hub.advance(0.1)
+	eq(hub.current.text, "Which branch should I use?", "the reason is what the bubble says")
+	hub.advance(30.0)
+	check(hub.current == null and hub.needs_attention(), "the bubble timed out but the user has not looked yet")
+	eq(hub.active_sources().size(), 1, "and the chip is still up")
 	hub.acknowledge()
-	check(not hub.needs_attention(), "until they open the history")
+	check(not hub.needs_attention(), "opening the history settles it")
+	eq(hub.active_sources().size(), 0, "and clears the chip: the user knows and will go to the session")
+
+
+func test_a_needs_input_chip_never_expires_on_its_own() -> void:
+	var hub: NotificationManager = _hub()
+	hub.set_state("a", &"needs_input", "Which branch?")
+	hub.set_state("b", &"working")
+	hub.advance(7 * 24 * 3600.0)
+	var names: Array[String] = []
+	for source: SourceInfo in hub.active_sources():
+		names.append(source.display_name)
+	eq(names, ["a"] as Array[String], "after a week away only the stale working chip is gone, not the one waiting for you")
 
 
 func test_clear_reads_that_sources_messages_only() -> void:
@@ -194,64 +189,56 @@ func test_status_tray() -> void:
 	eq(hub.active_sources()[0].display_name, "Copilot", "the source needing you sorts first")
 	hub.set_state("Copilot", &"idle")
 	hub.set_state("Claude Code", &"done")
-	hub.advance(NotificationManager.DONE_FADE_SECONDS + 1.0)
-	eq(hub.active_sources().size(), 0, "done chips fade away")
+	eq(hub.active_sources().size(), 1, "an idle source leaves the tray, a finished one stays")
+	hub.acknowledge()
+	eq(hub.active_sources().size(), 0, "until the user looks")
 
 
-func test_acknowledge_clears_done_but_not_needs_input() -> void:
+func test_done_and_error_chips_wait_for_the_user_however_long_it_takes() -> void:
+	var hub: NotificationManager = _hub()
+	hub.set_state("a", &"done", "All green")
+	hub.set_state("b", &"error", "Build failed")
+	hub.advance(7 * 24 * 3600.0)
+	eq(hub.active_sources().size(), 2, "after a week away both are still there")
+	hub.acknowledge()
+	eq(hub.active_sources().size(), 0, "and one look clears them")
+
+
+func test_a_working_chip_survives_while_its_session_keeps_reporting() -> void:
+	var hub: NotificationManager = _hub()
+	var stale: float = NotificationManager.WORKING_STALE_SECONDS
+	hub.set_state("a", &"working", "Running tests")
+	hub.set_state("b", &"working")
+	hub.advance(stale * 0.7)
+	hub.set_state("a", &"working", "Running tests")
+	hub.notify("b", "still here")
+	hub.advance(stale * 0.7)
+	eq(hub.active_sources().size(), 2, "a repeated status or any message counts as the session being alive")
+	hub.advance(stale * 0.7)
+	eq(hub.active_sources().size(), 0, "and once it falls silent for the whole window the chip goes")
+
+
+func test_acknowledge_clears_the_chips_that_ask_for_a_look() -> void:
 	var hub: NotificationManager = _hub()
 	hub.set_state("a", &"done")
 	hub.set_state("b", &"error")
 	hub.set_state("c", &"needs_input")
+	hub.set_state("d", &"working")
 	hub.acknowledge()
 	var left: Array[SourceInfo] = hub.active_sources()
-	eq(left.size(), 1, "only the blocked source remains")
-	eq(left[0].display_name, "c", "the one waiting on the human")
+	eq(left.size(), 1, "only the chip that is not about you remains")
+	eq(left[0].display_name, "d", "the one still working")
 
 
 func test_set_state_rejects_unknown_status() -> void:
 	check(_hub().set_state("a", &"dancing").has("error"), "unknown status is an error")
 
 
-func test_ask_returns_the_clicked_choice() -> void:
+func test_a_working_chip_still_goes_stale() -> void:
 	var hub: NotificationManager = _hub()
-	var out: Dictionary = {}
-	_ask(hub, out)
-	hub.advance(0.5)
-	check(hub.current != null and hub.current.is_ask(), "the question is on screen")
-	eq(hub.active_sources()[0].status, SourceInfo.Status.NEEDS_INPUT, "asker shows as needing input")
-	check(hub.answer_ask(hub.current.id, 1), "answering works")
-	eq(out["result"]["choice"], "No", "the awaiting caller got the choice")
-	eq(out["result"]["answered"], true, "marked answered")
-	check(hub.current == null, "bubble is gone")
-	eq(hub.active_sources()[0].status, SourceInfo.Status.WORKING, "asker goes back to working")
-
-
-func test_ask_times_out_but_stays_answerable_until_then() -> void:
-	var hub: NotificationManager = _hub()
-	var out: Dictionary = {}
-	_ask(hub, out, "claude", 30.0)
-	hub.advance(0.5)
-	hub.advance(NotificationManager.ASK_BUBBLE_SECONDS + 1.0)
-	check(hub.current == null, "the bubble timed out")
-	eq(hub.pending_asks().size(), 1, "but the question is still pending")
-	hub.reopen_asks()
-	hub.advance(0.5)
-	check(hub.current != null and hub.current.is_ask(), "clicking the character brings it back")
-	hub.advance(40.0)
-	eq(out["result"]["answered"], false, "eventually times out")
-	eq(out["result"]["reason"], "timeout", "with a reason")
-	eq(hub.pending_asks().size(), 0, "nothing pending")
-
-
-func test_ask_is_withdrawn_when_client_disconnects() -> void:
-	var hub: NotificationManager = _hub()
-	var out: Dictionary = {}
-	_ask(hub, out)
-	hub.advance(0.5)
-	hub.cancel_asks_owned_by(7)
-	eq(out["result"]["reason"], "cancelled", "the question is cancelled")
-	check(hub.current == null, "and the bubble removed")
+	hub.set_state("a", &"working")
+	hub.advance(NotificationManager.WORKING_STALE_SECONDS + 1.0)
+	eq(hub.active_sources().size(), 0, "a crashed agent does not spin forever")
 
 
 func test_clear_one_source_and_all() -> void:

@@ -21,8 +21,7 @@ var glyph: String = "?"
 
 var status: Status = Status.IDLE
 var status_text: String = ""
-## Manager clock time (seconds) of the last status change and of the last message of any kind.
-var status_since: float = 0.0
+## Manager clock time (seconds) of the last call of any kind from this source.
 var last_seen: float = 0.0
 var notice_count: int = 0
 

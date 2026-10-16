@@ -58,35 +58,24 @@ func test_notice_shows_bubble_and_makes_character_react() -> void:
 	main.queue_free()
 
 
-func test_ask_buttons_answer_the_waiting_tool_call() -> void:
+func test_needs_input_shows_a_chip_and_attention_until_the_user_looks() -> void:
 	var main: Node = await _boot()
 	PingHub.advance(10.0)
-	var out: Dictionary = {}
-	var runner: Callable = func() -> void:
-		out["result"] = await PingHub.ask("Claude", "Deploy?", PackedStringArray(["Ship", "Wait"]))
-	runner.call()
+	PingHub.set_state("Refactor billing", &"needs_input", "Which branch should I use?")
 	PingHub.advance(1.0)
 	await wait_frames(2)
-	var buttons: Array[Node] = main._bubble.find_children("*", "Button", true, false)
-	eq(buttons.size(), 2, "the bubble has a button per choice")
-	(buttons[1] as Button).pressed.emit()
-	eq(out["result"]["choice"], "Wait", "clicking a button resolves the ask")
-	main.queue_free()
-
-
-func test_unanswered_question_can_be_reopened_by_clicking_the_character() -> void:
-	var main: Node = await _boot()
-	PingHub.advance(10.0)
-	var runner: Callable = func() -> void:
-		await PingHub.ask("Claude", "Deploy?", PackedStringArray(["Ship", "Wait"]), 120.0)
-	runner.call()
-	PingHub.advance(1.0)
-	PingHub.advance(NotificationManager.ASK_BUBBLE_SECONDS + 1.0)
-	check(PingHub.current == null, "bubble timed out")
+	check(main._bubble.visible, "the reason is in the bubble")
+	check(main._tray.visible, "and a chip is up")
+	eq(main._brain.mode, CharacterBrain.Mode.ATTENTION, "and the character asks for a look")
+	PingHub.advance(60.0)
+	await wait_frames(2)
+	check(not main._bubble.visible, "the bubble times out")
+	check(main._tray.visible, "but the chip stays")
+	eq(main._brain.mode, CharacterBrain.Mode.ATTENTION, "and so does the attention")
 	_click(main, MOUSE_BUTTON_LEFT)
-	PingHub.advance(1.0)
-	check(PingHub.current != null and PingHub.current.is_ask(), "clicking brings the question back")
-	PingHub.clear()
+	await wait_frames(2)
+	check(not main._tray.visible, "opening the history clears the chip")
+	eq(main._brain.mode, CharacterBrain.Mode.IDLE, "and the attention")
 	main.queue_free()
 
 

@@ -9,10 +9,7 @@ extends Node
 ## Hardening: binds 127.0.0.1 only, rejects non-local Host/Origin headers (DNS rebinding),
 ## optional bearer token, request/connection caps, idle timeouts, keep-alive, chunked bodies.
 ##
-## Connections are polled from _process(). A request whose handler awaits (the `ask` tool)
-## keeps its connection busy until the human answers; other connections keep being served.
-
-signal connection_closed(conn_id: int)
+## Connections are polled from _process(); every request is answered immediately.
 
 const BIND_ADDRESS: String = "127.0.0.1"
 const MCP_PATH: String = "/mcp"
@@ -28,7 +25,6 @@ const REASONS: Dictionary = {
 }
 
 class Conn extends RefCounted:
-	var id: int = 0
 	var peer: StreamPeerTCP = null
 	var buf: PackedByteArray = PackedByteArray()
 	var scan_from: int = 0
@@ -45,7 +41,6 @@ var auth_token: String = ""
 
 var _server: TCPServer = TCPServer.new()
 var _conns: Array[Conn] = []
-var _next_conn_id: int = 1
 
 
 ## Starts listening. Port 0 picks a free port (see `port()`).
@@ -80,8 +75,6 @@ func _process(_delta: float) -> void:
 			peer.disconnect_from_host()
 			continue
 		var conn: Conn = Conn.new()
-		conn.id = _next_conn_id
-		_next_conn_id += 1
 		conn.peer = peer
 		conn.last_activity_msec = Time.get_ticks_msec()
 		_conns.append(conn)
@@ -117,7 +110,6 @@ func _drop(conn: Conn) -> void:
 	conn.closed = true
 	_conns.erase(conn)
 	conn.peer.disconnect_from_host()
-	connection_closed.emit(conn.id)
 
 
 # --- HTTP parsing ------------------------------------------------------------------------------
@@ -257,7 +249,7 @@ func _handle_request(conn: Conn, head: Dictionary, body: PackedByteArray) -> voi
 
 	match method:
 		"POST":
-			await _handle_post(conn, headers, body, close)
+			_handle_post(conn, headers, body, close)
 		"DELETE":
 			protocol.end_session(str(headers.get("mcp-session-id", "")))
 			_send(conn, 200, {}, "", close)
@@ -279,10 +271,8 @@ func _handle_post(conn: Conn, headers: Dictionary, body: PackedByteArray, close:
 		return
 	# Unknown or missing session ids are tolerated (the server may have restarted since the client
 	# initialized): a tool call carries everything it needs, including its `source`.
-	var ctx: Dictionary = {"session_id": str(headers.get("mcp-session-id", "")), "conn_id": conn.id}
-	var reply: Variant = await protocol.handle_payload(json.data, ctx)
-	if conn.closed:
-		return
+	var ctx: Dictionary = {"session_id": str(headers.get("mcp-session-id", ""))}
+	var reply: Variant = protocol.handle_payload(json.data, ctx)
 	var extra: Dictionary = {}
 	if ctx.has("new_session_id"):
 		extra["Mcp-Session-Id"] = ctx["new_session_id"]

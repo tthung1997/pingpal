@@ -12,7 +12,7 @@ Every character plays exactly three kinds of animation, so a pet, a person or a 
 | Kind | Required | When it plays | Design notes |
 | --- | --- | --- | --- |
 | `idle` | yes | Whenever nothing else happens, and while the user drags the character | Loops forever. Calm and low-key: it is on screen almost all the time. |
-| `attention` | yes | Whenever a message is waiting, **until the user checks it** (clicks the bubble or the character, answers a question), which can be minutes | **Neutral.** Never happy or sad: the app does not judge whether the news is good or bad. Must loop smoothly, and stay calm enough to bear for a long time: no flashing, no big motion. |
+| `attention` | yes | Whenever a message is waiting, **until the user checks it** (clicks the bubble or the character), which can be minutes | **Neutral.** Never happy or sad: the app does not judge whether the news is good or bad. Must loop smoothly, and stay calm enough to bear for a long time: no flashing, no big motion. |
 | breaks | no, but bundled packs need at least one | One random break, 3-6 s, after each 6-14 s of idle; never the same one twice in a row | Short variations (nap, stretch, snack). Each break loops several times, so frame 4 must flow into frame 1. |
 
 A message interrupts anything, including a break, and attention stays until the user checks the

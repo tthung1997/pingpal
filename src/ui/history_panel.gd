@@ -1,10 +1,8 @@
 class_name HistoryPanel
 extends PanelContainer
 ## What you missed: every source's current status plus the latest messages, newest first.
-## Unanswered questions show their buttons here, so a bubble that timed out is never lost.
 
 signal closed
-signal choice_picked(ask_id: int, index: int)
 
 const MAX_ROWS: int = 30
 const PANEL_WIDTH: float = 360.0
@@ -67,19 +65,13 @@ func refresh() -> void:
 		_list.add_child(_status_row(source))
 	if not sources.is_empty():
 		_list.add_child(HSeparator.new())
-	var pending: Array[Notice] = _hub.pending_asks()
-	for notice: Notice in pending:
-		_list.add_child(_notice_row(notice, true))
 	var shown: int = 0
 	for index: int in range(_hub.history.size() - 1, -1, -1):
-		var notice: Notice = _hub.history[index]
-		if pending.has(notice):
-			continue
-		_list.add_child(_notice_row(notice, false))
+		_list.add_child(_notice_row(_hub.history[index]))
 		shown += 1
 		if shown >= MAX_ROWS:
 			break
-	if shown == 0 and pending.is_empty() and sources.is_empty():
+	if shown == 0 and sources.is_empty():
 		_list.add_child(UiStyle.label("Nothing yet. Messages from your AIs will show up here.",
 			UiStyle.SMALL_FONT_SIZE, UiStyle.TEXT_DIM))
 	_fit.call_deferred()
@@ -111,13 +103,10 @@ func _status_row(source: SourceInfo) -> Control:
 	return row
 
 
-func _notice_row(notice: Notice, pending: bool) -> Control:
+func _notice_row(notice: Notice) -> Control:
 	var accent: Color = notice.source.color if notice.source != null else Color.WHITE
-	var box: VBoxContainer = VBoxContainer.new()
-	box.add_theme_constant_override("separation", 3)
 	var row: HBoxContainer = HBoxContainer.new()
 	row.add_theme_constant_override("separation", 6)
-	box.add_child(row)
 	row.add_child(_dot(accent))
 	var body: VBoxContainer = VBoxContainer.new()
 	body.add_theme_constant_override("separation", 1)
@@ -131,17 +120,7 @@ func _notice_row(notice: Notice, pending: bool) -> Control:
 	text.custom_minimum_size.x = 250.0
 	body.add_child(text)
 	row.add_child(UiStyle.label(UiStyle.relative_time(notice.wall_time), UiStyle.SMALL_FONT_SIZE, UiStyle.TEXT_DIM))
-	if pending:
-		var buttons: HBoxContainer = HBoxContainer.new()
-		buttons.add_theme_constant_override("separation", 6)
-		for index: int in notice.choices.size():
-			var button: Button = Button.new()
-			button.text = notice.choices[index]
-			UiStyle.style_button(button, accent)
-			button.pressed.connect(func() -> void: choice_picked.emit(notice.id, index))
-			buttons.add_child(button)
-		box.add_child(buttons)
-	return box
+	return row
 
 
 static func _text_width(text: String, font_size: int) -> float:

@@ -1,10 +1,9 @@
 class_name SpeechBubble
 extends PanelContainer
-## The speech bubble: source name, the text, and answer buttons for questions. Clicking the
-## body dismisses it. It only displays; the hub decides what is shown and for how long.
+## The speech bubble: source name and the text. Clicking the body dismisses it. It only displays;
+## the hub decides what is shown and for how long.
 
 signal dismissed
-signal choice_picked(ask_id: int, index: int)
 
 const MAX_TEXT_WIDTH: float = 280.0
 ## Longest the source name may be before it is cut with an ellipsis (the history shows it in full).
@@ -17,7 +16,6 @@ var tail_x: float = 40.0
 var _name_label: Label
 var _glyph: Label
 var _text_label: Label
-var _buttons: HBoxContainer
 var _accent: Color = Color.WHITE
 var _tween: Tween
 
@@ -43,10 +41,6 @@ func _init() -> void:
 	_text_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	_text_label.custom_minimum_size.x = 60.0
 	column.add_child(_text_label)
-	_buttons = HBoxContainer.new()
-	_buttons.add_theme_constant_override("separation", 6)
-	_buttons.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	column.add_child(_buttons)
 
 
 func show_notice(notice: Notice) -> void:
@@ -66,17 +60,6 @@ func show_notice(notice: Notice) -> void:
 	var natural: float = font.get_multiline_string_size(notice.text, HORIZONTAL_ALIGNMENT_LEFT, -1,
 		UiStyle.FONT_SIZE).x
 	_text_label.custom_minimum_size.x = clampf(natural + 2.0, 60.0, MAX_TEXT_WIDTH)
-	for child: Node in _buttons.get_children():
-		child.queue_free()
-		_buttons.remove_child(child)
-	_buttons.visible = notice.is_ask()
-	if notice.is_ask():
-		for index: int in notice.choices.size():
-			var button: Button = Button.new()
-			button.text = notice.choices[index]
-			UiStyle.style_button(button, _accent)
-			button.pressed.connect(func() -> void: choice_picked.emit(notice.id, index))
-			_buttons.add_child(button)
 	reset_size()
 	visible = true
 	if _tween != null:

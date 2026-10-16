@@ -4,7 +4,7 @@ A tiny character that lives in a corner of your screen and tells you what your A
 
 PingPal runs an **MCP server** on your machine. Point Claude Code, GitHub Copilot, Codex, VS Code or any
 other MCP client at it, and the AI decides what the character says and does: *"Tests are green"*,
-*"Need your call on the migration"*, the character perking up when a long task finishes. You stop babysitting
+*"Need your input: which branch?"*, the character perking up when a long task finishes. You stop babysitting
 five terminals and just glance at the character.
 
 - Transparent, always-on-top, **click-through** except on the character and its bubbles.
@@ -42,10 +42,10 @@ It listens on loopback only. Check it from a terminal:
 
 | Action | Result |
 | --- | --- |
-| Left-click the character | Open/close the history (everything you missed, plus any open question). Opening it counts as checking your messages and ends the attention animation. Re-opens a question whose bubble timed out. |
+| Left-click the character | Open/close the history (everything you missed). Opening it counts as checking your messages: it ends the attention animation and clears finished, failed and waiting-for-you chips. |
 | Click a bubble | Dismiss it; that counts as reading it |
 | Drag the character | Move it along the strip; it resumes idling (or its attention animation, if something is still unread) after you let go |
-| `Right-click` | Menu: history, clear everything (messages, questions, status chips and the history; it asks "are you sure?" first), switch character pack (remembered across runs), next screen, quit |
+| `Right-click` | Menu: history, clear everything (messages, status chips and the history; it asks "are you sure?" first), switch character pack (remembered across runs), next screen, quit |
 | Click a tray chip | Open the history |
 
 ### Options
@@ -145,18 +145,21 @@ PingPal sends usage instructions during the MCP handshake, but a line in your ag
 
 > Use the `pingpal` MCP server to keep me posted: `set_state(status="working")` when you start a
 > long task and `set_state(status="done")` when it finishes; `notify` for a short one-liner when
-> something is worth my attention; `ask` only when you are genuinely blocked on a decision. Keep
-> text under ~100 characters and always pass `source` as the title of this session (or a short
-> description of its task), the same on every call.
+> something is worth my attention; `set_state(status="needs_input", text="<what you need>")` when you
+> are blocked on me, then stop and wait (I will open your session). Keep text under ~100 characters
+> and always pass `source` as the title of this session (or a short description of its task), the
+> same on every call.
 
 ## The tools
 
 | Tool | Arguments | What it does |
 | --- | --- | --- |
 | `notify` | `source`, `text`, `priority?` low/normal/high/urgent | Speech bubble + attention animation. Low priority is batched; urgent interrupts. |
-| `set_state` | `source`, `status` working/done/needs_input/error/idle, `text?` | Updates the tray chip. `done`, `needs_input` and `error` also announce themselves. |
-| `ask` | `source`, `question`, `choices?` (2-4, default Yes/No), `timeout_seconds?` (default 45) | Shows buttons and **waits** for a click. Returns `{answered, choice, index}` or `{answered:false, reason}`. |
-| `clear` | `source` | Removes your own queued messages, bubble, questions and status. Other sources and the history are never affected: only the user's "Clear everything" menu item clears everything. |
+| `set_state` | `source`, `status` working/done/needs_input/error/idle, `text?` | Updates the tray chip. `done`, `needs_input` and `error` also announce themselves with `text`. `done` and `error` chips also stay until you open the history. `needs_input` is how a session says "come to my session": its chip stays until you open the history too. |
+| `clear` | `source` | Removes your own queued messages, bubble and status. Other sources and the history are never affected: only the user's "Clear everything" menu item clears everything. |
+
+There is deliberately no tool for asking questions with buttons: a real question usually needs the
+session's context, so the AI flags `needs_input` and you answer in the session itself.
 
 `source` is **required on every call**. It is a name that identifies the calling session, up to 80
 characters: the session's title if the model knows it ("Add contributor guide for character packs"),
@@ -224,7 +227,7 @@ the visible pixels of the current frame, so transparent parts of a large frame n
 # equivalent: godot --headless --path . --import ; godot --headless --path . --script res://tests/run_tests.gd
 ```
 
-Covers pack loading, the idle state machine, the notification manager (priority, batching, asks,
+Covers pack loading, the idle state machine, the notification manager (priority, batching, read state,
 status), the MCP protocol, the HTTP server over real loopback sockets, and the main scene driven with
 synthetic clicks. `scripts/test-mcp.*` check a *running* app from outside.
 

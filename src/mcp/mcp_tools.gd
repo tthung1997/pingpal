@@ -41,7 +41,7 @@ func definitions() -> Array:
 		{
 			"name": "set_state",
 			"title": "Set your status",
-			"description": "Report what you are doing so it shows in the status tray. Call with 'working' when you start a long task and 'done' when it finishes. Use 'needs_input' when blocked on the human, 'error' when something failed, 'idle' to clear yourself. Cheaper and less noisy than notify.",
+			"description": "Report what you are doing so it shows in the status tray. Call with 'working' when you start a long task and 'done' when it finishes. Use 'needs_input' when you are blocked and the human must come to your session to answer (put the reason in text; the human will open your session, so do not wait for a reply here), 'error' when something failed, 'idle' to clear yourself. Cheaper and less noisy than notify.",
 			"inputSchema": {
 				"type": "object",
 				"properties": {
@@ -54,25 +54,9 @@ func definitions() -> Array:
 			"annotations": {"readOnlyHint": false, "destructiveHint": false, "idempotentHint": true, "openWorldHint": false},
 		},
 		{
-			"name": "ask",
-			"title": "Ask the human a quick question",
-			"description": "Show a question with 2-4 buttons and wait for the human to click one. Returns {answered, choice, index}, or {answered: false, reason} if it times out or is dismissed. Only for genuine decisions; the human may not be at the screen, so keep timeout_seconds modest and have a fallback.",
-			"inputSchema": {
-				"type": "object",
-				"properties": {
-					"source": SOURCE_SCHEMA,
-					"question": {"type": "string", "minLength": 1, "maxLength": 280},
-					"choices": {"type": "array", "minItems": 2, "maxItems": 4, "items": {"type": "string", "minLength": 1, "maxLength": 40}, "default": ["Yes", "No"]},
-					"timeout_seconds": {"type": "integer", "minimum": 5, "maximum": 600, "default": 45, "description": "How long to wait for an answer."},
-				},
-				"required": ["source", "question"],
-			},
-			"annotations": {"readOnlyHint": false, "destructiveHint": false, "idempotentHint": false, "openWorldHint": false},
-		},
-		{
 			"name": "clear",
 			"title": "Clear messages and status",
-			"description": "Remove your own queued messages, bubble, pending questions and tray status. Only the source you name is affected; other sources and the user's history are left alone.",
+			"description": "Remove your own queued messages, bubble and tray status. Only the source you name is affected; other sources and the user's history are left alone.",
 			"inputSchema": {
 				"type": "object",
 				"properties": {
@@ -85,8 +69,8 @@ func definitions() -> Array:
 	]
 
 
-## Runs a tool. `ctx` carries {conn_id}. Always returns an MCP tool result.
-func call_tool(tool_name: String, arguments: Dictionary, ctx: Dictionary) -> Dictionary:
+## Runs a tool. Always returns an MCP tool result.
+func call_tool(tool_name: String, arguments: Dictionary) -> Dictionary:
 	var schema: Dictionary = _schema_for(tool_name)
 	if schema.is_empty():
 		return _fail("Unknown tool '%s'" % tool_name)
@@ -102,11 +86,6 @@ func call_tool(tool_name: String, arguments: Dictionary, ctx: Dictionary) -> Dic
 		"set_state":
 			var result: Dictionary = hub.set_state(source, StringName(args["status"]), str(args.get("text", "")))
 			return _fail(result["error"]) if result.has("error") else _ok(result)
-		"ask":
-			var choices: PackedStringArray = PackedStringArray(args["choices"])
-			var answer: Dictionary = await hub.ask(source, str(args["question"]), choices,
-				float(args["timeout_seconds"]), int(ctx.get("conn_id", 0)))
-			return _ok(answer)
 		"clear":
 			return _ok(hub.clear(source))
 	return _fail("Unknown tool '%s'" % tool_name)
