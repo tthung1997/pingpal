@@ -21,6 +21,42 @@ unzip it anywhere and run `PingPal.exe` (Windows 10/11, 64-bit; no installer). T
 SmartScreen may warn on first run: choose **More info**, then **Run anyway**. Each release also has a `.sha256`
 file for the zip.
 
+### Start with Windows
+
+There is no built-in autostart option yet. Put `PingPal.exe` in a folder that won't change, then start it at
+login. The zip unpacks into a versioned folder (`PingPal-0.1.0-windows`), so don't point autostart at that:
+the name changes on every upgrade. Copy the exe to a stable place and replace it when you upgrade.
+
+```powershell
+New-Item -ItemType Directory -Force "$env:LOCALAPPDATA\Programs\PingPal" | Out-Null
+Copy-Item .\PingPal.exe "$env:LOCALAPPDATA\Programs\PingPal\"
+```
+
+Then either:
+
+- **A startup shortcut** (simplest): press `Win+R`, run `shell:startup`, and drop a shortcut to that
+  `PingPal.exe` in the folder. Or from PowerShell:
+
+  ```powershell
+  $exe = "$env:LOCALAPPDATA\Programs\PingPal\PingPal.exe"
+  $s = (New-Object -ComObject WScript.Shell).CreateShortcut("$([Environment]::GetFolderPath('Startup'))\PingPal.lnk")
+  $s.TargetPath = $exe; $s.WorkingDirectory = Split-Path $exe; $s.Save()
+  ```
+
+- **A Task Scheduler task** (to delay the start a little, so it doesn't compete with everything else that starts
+  at login). No admin needed:
+
+  ```powershell
+  $exe = "$env:LOCALAPPDATA\Programs\PingPal\PingPal.exe"
+  $trigger = New-ScheduledTaskTrigger -AtLogOn -User $env:USERNAME
+  $trigger.Delay = "PT30S"
+  Register-ScheduledTask -TaskName PingPal -Action (New-ScheduledTaskAction -Execute $exe) -Trigger $trigger
+  ```
+
+  Remove it with `Unregister-ScheduledTask PingPal -Confirm:$false`.
+
+To stop autostarting, delete the shortcut or the task.
+
 ## Run it from source
 
 You need [Godot 4.7](https://godotengine.org/download) (standard build, not .NET).
@@ -150,15 +186,18 @@ Bridge with [`mcp-remote`](https://www.npmjs.com/package/mcp-remote):
 
 PingPal sends short usage instructions during the MCP handshake, but not every client shows them to
 the model, so give your AI a proper guide. [docs/AGENT_INSTRUCTIONS.md](docs/AGENT_INSTRUCTIONS.md)
-explains both ways to do it:
+explains both ways to do it, and recommends using both:
 
-- **A skill**: copy `skills/pingpal/` to your tool's skills folder (for example `~/.agents/skills/`).
-  It is only loaded when relevant and covers when to report, how to name the session, and how to ask
-  for you.
-- **A short snippet** for an always-on instructions file (`AGENTS.md`, `CLAUDE.md`,
-  `.github/copilot-instructions.md`), in the same document.
+- **A short snippet** for an always-on instructions file (`~/.copilot/copilot-instructions.md`, `AGENTS.md`,
+  `CLAUDE.md`, `.github/copilot-instructions.md`). **This is what makes it reliable**: models often skip a
+  skill, but always read the instructions file. It also covers apps that defer MCP tools.
+- **A skill**: copy `skills/pingpal/` to your tool's skills folder (`~/.copilot/skills/` for the GitHub
+  Copilot app, `~/.agents/skills/` on some installs; check which exists). It covers when to report, how to
+  name the session, and how to ask for you. Use it together with the snippet.
 
-In one sentence: *send `done` or `error` when you finish real work, `working` first only for longer jobs;
+Both are in the release zip too.
+
+In one sentence: *on every request send `working` first and `done` or `error` last (an AI can't know how long a task will take);
 flag `needs_input` and stop when you are blocked; use `notify` rarely; pass the same `source` on every call.*
 
 ## The tools

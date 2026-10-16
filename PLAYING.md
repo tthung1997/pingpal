@@ -33,6 +33,17 @@ the project page: https://github.com/tthung1997/pingpal (README, and `docs/AGENT
 
 PingPal listens on your own machine only (loopback), never on the network.
 
+To make your AI actually use it, add the short snippet from `AGENT_INSTRUCTIONS.md` (in this zip) to your
+AI's always-on instructions, and copy the `skills\pingpal` folder to your tool's skills folder
+(`%USERPROFILE%\.copilot\skills\` for the GitHub Copilot app). Using both works best.
+
+## Start with Windows
+
+Copy `PingPal.exe` to a folder that won't change, for example `%LOCALAPPDATA%\Programs\PingPal\` (this zip's
+folder name changes with each version). Press `Win+R`, run `shell:startup`, and put a shortcut to that exe in
+the folder that opens. A Task Scheduler "At log on" task with a short delay also works; the project page has
+the commands.
+
 ## Using it
 
 - **Click the character** to open the history. That counts as checking your messages.

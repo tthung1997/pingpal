@@ -215,8 +215,8 @@ session ids are tolerated** instead of `404` (the app is restarted far more ofte
 normally is, and each call carries everything it needs). Strictness can be added behind a setting if
 a client needs it.
 
-Initialize also returns **server instructions** telling the model how to behave (use `set_state`
-for longer jobs, report completion of any real work, keep text short, flag `needs_input` instead of waiting, always pass a stable
+Initialize also returns **server instructions** telling the model how to behave (send `working` first and `done`/`error` last on
+every request, because a model can't tell in advance how long a task will take; keep text short, flag `needs_input` instead of waiting, always pass a stable
 `source`). Tool descriptions repeat the same guidance.
 
 ### Tools

@@ -57,6 +57,8 @@ Copy-Item $exe $stage
 Copy-Item (Join-Path $repo "LICENSE") $stage
 Copy-Item (Join-Path $repo "THIRD_PARTY_NOTICES.md") $stage
 Copy-Item (Join-Path $repo "PLAYING.md") (Join-Path $stage "README.txt")
+Copy-Item (Join-Path $repo "docs/AGENT_INSTRUCTIONS.md") $stage
+Copy-Item (Join-Path $repo "skills") $stage -Recurse
 Compress-Archive -Path $stage -DestinationPath $zip
 Remove-Item -LiteralPath $stage -Recurse -Force
 
