@@ -1,0 +1,23 @@
+# Godot import cache and editor state (reproducible)
+.godot/
+.import/
+export.cfg
+*.translation
+
+# Build output
+build/
+export/
+
+# Editors / OS
+.vscode/
+!.vscode/extensions.json
+.idea/
+*.swp
+*~
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Logs / local scratch
+*.log
+/local/

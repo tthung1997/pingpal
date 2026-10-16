@@ -1,0 +1,22 @@
+# Godot writes LF; committing CRLF causes noisy diffs in .tscn/.tres files.
+* text=auto eol=lf
+
+*.gd      text eol=lf
+*.gdshader text eol=lf
+*.tscn    text eol=lf
+*.tres    text eol=lf
+*.godot   text eol=lf
+*.cfg     text eol=lf
+*.import  text eol=lf
+*.json    text eol=lf
+*.md      text eol=lf
+*.sh      text eol=lf
+*.ps1     text eol=lf
+*.svg     text eol=lf
+
+*.png     binary
+*.ico     binary
+*.ttf     binary
+*.otf     binary
+*.wav     binary
+*.ogg     binary
