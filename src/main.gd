@@ -184,7 +184,7 @@ func _layout() -> void:
 	_hitbox.position = hit.position
 	_hitbox.size = hit.size
 	var center_x: float = hit.get_center().x
-	var top: float = hit.position.y - 8.0
+	var top: float = _actor.rest_top() - 8.0
 	if _tray.visible:
 		_tray.size = _tray.get_combined_minimum_size()
 		_tray.position = Vector2(_clamp_x(center_x - _tray.size.x * 0.5, _tray.size.x), top - _tray.size.y)

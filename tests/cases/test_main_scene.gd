@@ -58,6 +58,20 @@ func test_notice_shows_bubble_and_makes_character_react() -> void:
 	main.queue_free()
 
 
+func test_the_tray_does_not_move_when_an_animation_grows_taller() -> void:
+	var main: Node = await _boot()
+	PingHub.set_state("Refactor billing", &"working")
+	PingHub.advance(1.0)
+	await wait_frames(2)
+	check(main._tray.visible, "a chip is up")
+	var rest_y: float = main._tray.position.y
+	for state: StringName in main._pack.breaks():
+		main._brain.preview(state)
+		await wait_frames(4)
+		eq(main._tray.position.y, rest_y, "the tray stays put during '%s'" % state)
+	main.queue_free()
+
+
 func test_needs_input_shows_a_chip_and_attention_until_the_user_looks() -> void:
 	var main: Node = await _boot()
 	PingHub.advance(10.0)

@@ -39,6 +39,7 @@ var errors: PackedStringArray = PackedStringArray()
 var _states: Dictionary = {}
 ## Animation name -> per-frame tight bounds of the visible pixels, in frame pixels.
 var _used: Dictionary = {}
+var _rest_tops: Dictionary = {}
 var _sheet_image: Image = null
 
 
@@ -52,6 +53,22 @@ func used_rect(animation: StringName, index: int) -> Rect2i:
 	if index >= 0 and index < list.size():
 		return list[index]
 	return Rect2i(Vector2i.ZERO, frame_size)
+
+
+## The highest visible pixel (frame pixels, y down) of the idle animation. Unlike `used_rect`, it
+## does not change with the current frame or animation, so UI can hang from it without bobbing
+## when a break animation (the sleeping "Z Z Z", say) grows taller than the character.
+func rest_top() -> int:
+	var animation: StringName = resolve(&"idle")
+	if _rest_tops.has(animation):
+		return _rest_tops[animation]
+	var top: int = -1
+	for rect: Rect2i in _used.get(animation, []):
+		top = rect.position.y if top < 0 else mini(top, rect.position.y)
+	if top < 0:
+		top = 0
+	_rest_tops[animation] = top
+	return top
 
 
 ## The break animations (semantic states) the brain may play while idle.

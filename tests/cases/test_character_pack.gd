@@ -74,6 +74,23 @@ func test_frames_report_their_visible_pixels() -> void:
 	eq(pack.used_rect(&"idle", 99), Rect2i(Vector2i.ZERO, pack.frame_size), "unknown frames fall back to the whole frame")
 
 
+func test_rest_top_ignores_taller_break_animations() -> void:
+	var tallest_break: int = 0
+	for pack_id: String in CharacterPack.discover():
+		var pack: CharacterPack = CharacterPack.load_by_id(pack_id)
+		var idle: StringName = pack.resolve(&"idle")
+		var expected: int = pack.frame_size.y
+		for index: int in pack.frames.get_frame_count(idle):
+			expected = mini(expected, pack.used_rect(idle, index).position.y)
+		eq(pack.rest_top(), expected, "%s: rest_top is the highest idle pixel" % pack_id)
+		for state: StringName in pack.breaks():
+			var animation: StringName = pack.resolve(state)
+			for index: int in pack.frames.get_frame_count(animation):
+				if pack.used_rect(animation, index).position.y < pack.rest_top():
+					tallest_break += 1
+	check(tallest_break > 0, "some bundled break animation rises above the idle pose")
+
+
 func test_unknown_states_fall_back_to_idle() -> void:
 	var pack: CharacterPack = CharacterPack.load_by_id("pip")
 	eq(pack.resolve(&"no-such-state"), &"idle", "unknown states land on idle")
