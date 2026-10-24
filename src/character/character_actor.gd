@@ -59,6 +59,12 @@ func hit_rect() -> Rect2:
 	return Rect2(position + local.position * scale, local.size * scale)
 
 
+## The screen y of the top of the character at rest. Stays put while animations come and go, so
+## the tray and bubble above the character do not jump with them.
+func rest_top() -> float:
+	return position.y + (pack.rest_top() - pack.anchor.y) * scale.y
+
+
 func _play(state: StringName) -> void:
 	var animation: StringName = pack.resolve(state)
 	if animation == &"" or animation == _animation:
